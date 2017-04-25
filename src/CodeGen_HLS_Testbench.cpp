@@ -36,7 +36,7 @@ protected:
 
 vector<HLS_Argument> HLS_Closure::arguments(const Scope<CodeGen_HLS_Base::Stencil_Type> &streams_scope) {
     vector<HLS_Argument> res;
-    for (const pair<string, Closure::BufferRef> &i : buffers) {
+    for (const pair<string, Closure::Buffer> &i : buffers) {
         debug(3) << "buffer: " << i.first << " " << i.second.size;
         if (i.second.read) debug(3) << " (read)";
         if (i.second.write) debug(3) << " (write)";
@@ -66,9 +66,9 @@ const string hls_headers =
     "#include \"hls_target.h\"\n";
 }
 
-CodeGen_HLS_Testbench::CodeGen_HLS_Testbench(ostream &tb_stream)
-    : CodeGen_HLS_Base(tb_stream, CPlusPlusImplementation, ""),
-      cg_target("hls_target") {
+CodeGen_HLS_Testbench::CodeGen_HLS_Testbench(ostream &tb_stream, Target t)
+    : CodeGen_HLS_Base(tb_stream, t, CPlusPlusImplementation, ""),
+      cg_target("hls_target", t) {
     cg_target.init_module();
 
     stream << hls_headers;

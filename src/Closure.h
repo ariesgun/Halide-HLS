@@ -9,6 +9,7 @@
 #include "IR.h"
 #include "IRVisitor.h"
 #include "Scope.h"
+#include "Buffer.h"
 
 namespace Halide {
 namespace Internal {
@@ -22,6 +23,11 @@ namespace Internal {
 class Closure : public IRVisitor {
 protected:
     Scope<int> ignore;
+
+    // Indicates whether the pointer obtained by address_of is read or written.
+    // By default, assume address_of users read but not write.
+    bool address_of_read = true;
+    bool address_of_written = false;
 
     using IRVisitor::visit;
 
@@ -37,7 +43,7 @@ protected:
 
 public:
     /** Information about a buffer reference from a closure. */
-    struct BufferRef
+    struct Buffer
     {
         /** The type of the buffer referenced. */
         Type type;
@@ -54,8 +60,12 @@ public:
         /** The size of the buffer if known, otherwise zero. */
         size_t size;
 
-        BufferRef() : dimensions(0), read(false), write(false), size(0) { }
+        Buffer() : dimensions(0), read(false), write(false), size(0) { }
     };
+
+protected:
+    void found_buffer_ref(const std::string &name, Type type,
+                          bool read, bool written, Halide::Buffer<> image);
 
 public:
     Closure() {}
@@ -73,10 +83,7 @@ public:
     std::map<std::string, Type> vars;
 
     /** External allocations referenced. */
-    std::map<std::string, BufferRef> buffers;
-
-    /** The Halide names of the external symbols (in the same order as llvm_types). */
-    std::vector<std::string> names() const;
+    std::map<std::string, Buffer> buffers;
 };
 
 }}

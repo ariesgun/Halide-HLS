@@ -30,7 +30,7 @@ class CodeGen_HLS_Target {
 public:
     /** Initialize a C code generator pointing at a particular output
      * stream (e.g. a file, or std::cout) */
-    CodeGen_HLS_Target(const std::string &name);
+    CodeGen_HLS_Target(const std::string &name, Target t);
     virtual ~CodeGen_HLS_Target();
 
     void init_module();
@@ -44,7 +44,7 @@ public:
 protected:
     class CodeGen_HLS_C : public CodeGen_HLS_Base {
     public:
-        CodeGen_HLS_C(std::ostream &s, OutputKind output_kind) : CodeGen_HLS_Base(s, output_kind) {}
+        CodeGen_HLS_C(std::ostream &s, Target t, OutputKind output_kind) : CodeGen_HLS_Base(s, t, output_kind) {}
 
         void add_kernel(Stmt stmt,
                         const std::string &name,

@@ -45,8 +45,8 @@ const string zynq_runtime =
     "int halide_zynq_hwacc_sync(int task_id);\n";
 }
 
-CodeGen_Zynq_C::CodeGen_Zynq_C(ostream &dest)
-    : CodeGen_C(dest, CImplementation) {
+CodeGen_Zynq_C::CodeGen_Zynq_C(ostream &dest, Target t)
+    : CodeGen_C(dest, t, CImplementation) {
     stream  << zynq_runtime;
 }
 

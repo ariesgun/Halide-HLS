@@ -4,17 +4,25 @@ all: $(BIN)/filter
 
 $(BIN)/bilateral_grid_exec: bilateral_grid_generator.cpp $(GENERATOR_DEPS)
 	@-mkdir -p $(BIN)
-	$(CXX) $(CXXFLAGS) -fno-rtti $(filter-out %.h,$^) -o $@ $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) -g -fno-rtti $(filter-out %.h,$^) -o $@ $(LDFLAGS)
 
-$(BIN)/bilateral_grid.a: $(BIN)/bilateral_grid_exec
+$(BIN)/bilateral_grid_test.a: $(BIN)/bilateral_grid_exec
 	@-mkdir -p $(BIN)
-	$^ -o $(BIN) target=host
+	HL_CODEGEN_DEBUG=3 $^ -n hls_target -e static_library,h,html -o $(BIN) target=host
 
-$(BIN)/filter: $(BIN)/bilateral_grid.a filter.cpp
+$(BIN)/viz/bilateral_grid.a: $(BIN)/bilateral_grid_exec
 	@-mkdir -p $(BIN)
-	$(CXX) $(CXXFLAGS) -O3 -ffast-math -Wall -Werror -I$(BIN) filter.cpp $(BIN)/bilateral_grid.a -o $@ $(PNGFLAGS) $(LDFLAGS)
+	@-mkdir -p $(BIN)/viz
+	$^ -o $(BIN)/viz target=$(HL_TARGET)-trace_loads-trace_stores-trace_realizations
 
-$(BIN)/bilateral_grid.mp4: $(BIN)/filter viz.sh
+$(BIN)/filter: $(BIN)/bilateral_grid_test.a filter.cpp
+	@-mkdir -p $(BIN)
+	$(CXX) $(CXXFLAGS) -O3 -ffast-math -Wall -Werror -I$(BIN) filter.cpp $(BIN)/bilateral_grid.a -o $@ $(IMAGE_IO_FLAGS) $(LDFLAGS)
+$(BIN)/filter_viz: $(BIN)/viz/bilateral_grid.a filter.cpp
+	@-mkdir -p $(BIN)
+	$(CXX) $(CXXFLAGS) -O3 -ffast-math -Wall -Werror -I$(BIN)/viz filter.cpp $(BIN)/viz/bilateral_grid.a -o $@ $(IMAGE_IO_FLAGS) $(LDFLAGS)
+
+$(BIN)/bilateral_grid.mp4: $(BIN)/filter_viz viz.sh
 	@-mkdir -p $(BIN)
 	bash viz.sh $(BIN)
 

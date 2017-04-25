@@ -308,7 +308,7 @@ int main(int argc, char **argv) {
     MyPipelineOpt p2;
     p2.compile_hls();
 
-    MyPipeline p3;
-    p3.compile_gpu();
+    //MyPipeline p3;
+    //p3.compile_gpu();
     return 0;
 }

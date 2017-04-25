@@ -39,14 +39,22 @@ class InjectCmaIntrinsics : public IRMutator {
             // and pop the call out from the body
             const LetStmt *lets = op->body.as<LetStmt>();
             internal_assert(lets);
-            const Call *buf = lets->value.as<Call>();
-            internal_assert(buf && buf->name == Call::create_buffer_t);
+
+            const Let *buf = lets->value.as<Let>();
+            internal_assert(buf);
+            const Call *buf_init = buf->body.as<Call>();
+            internal_assert(buf_init && buf_init->name == Call::buffer_init);
             Stmt new_body = mutate(lets->body);
+
+            //const Call *buf = lets->value.as<Call>();
+            //internal_assert(buf && buf->name == Call::create_buffer_t);
+            //Stmt new_body = mutate(lets->body);
 
             // allocate node
             string zerocopy_buffer_name = op->name + ".buffer";
-            Expr zerocopy_buffer = Variable::make(type_of<struct buffer_t *>(), zerocopy_buffer_name);
-            Expr new_expr = Call::make(Handle(), Call::extract_buffer_host, {zerocopy_buffer}, Call::Intrinsic);
+            Expr zerocopy_buffer = Variable::make(type_of<struct halide_buffer_t *>(), zerocopy_buffer_name);
+            //Expr new_expr = Call::make(Handle(), Call::extract_buffer_host, {zerocopy_buffer}, Call::Intrinsic);
+            Expr new_expr = Call::make(Handle(), Call::buffer_get_host, {zerocopy_buffer}, Call::Extern);
             string free_function = "halide_zynq_free";
 
             Stmt free = Evaluate::make(Call::make(Int(32), "halide_zynq_cma_free", {zerocopy_buffer}, Call::Intrinsic));
@@ -59,11 +67,30 @@ class InjectCmaIntrinsics : public IRMutator {
             stmt = Block::make(LetStmt::make(call_result_name, call, AssertStmt::make(call_result_var == 0, call_result_var)), stmt);
 
             // create the new buffer_t
-            vector<Expr> args = buf->args;
-            args[0] = Call::make(Handle(), Call::null_handle, {}, Call::PureIntrinsic);
-            Expr zerocopy_buf = Call::make(type_of<struct buffer_t *>(),
-                                           Call::create_buffer_t,
-                                           args, Call::Intrinsic);
+            //debug(3) << "Let " << buf->name << " \nwith value: " << buf->value << " \nwith body :" << buf->body << "\n";
+            vector<Expr> args_new = buf_init->args;
+            args_new[2] = make_zero(Handle());
+            /*
+            const Call *buf_create_struct = buf->value.as<Call>();
+            vector<Expr> args_create = buf_create_struct->args;
+
+            vector<Expr> args;
+            //args[0] = Call::make(Handle(), Call::null_handle, {}, Call::PureIntrinsic);
+            args.push_back(make_zero(Handle()));
+            args.push_back(args_new[3]);
+
+            std::vector<Expr> shape;
+            for (size_t i = 0; i < (size_t) 4; i++) {
+                args.push_back(args_create[i*4    ]);
+                args.push_back(args_create[i*4 + 1]);
+                args.push_back(args_create[i*4 + 2]);
+            }
+            */
+
+            Expr init_buf = Call::make(type_of<struct halide_buffer_t *>(),
+                                           Call::buffer_init,
+                                           args_new, Call::Extern);
+            Expr zerocopy_buf = Let::make(buf->name, buf->value, init_buf);
             stmt = LetStmt::make(zerocopy_buffer_name,  zerocopy_buf, stmt);
 
 
