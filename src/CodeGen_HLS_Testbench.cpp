@@ -66,9 +66,17 @@ const string hls_headers =
     "#include \"hls_target.h\"\n";
 }
 
+CodeGen_HLS_Testbench::CodeGen_HLS_Testbench(const std::string base_dir, ostream &tb_stream, Target t)
+   : CodeGen_HLS_Base(tb_stream, t, CPlusPlusImplementation, ""),
+      cg_target("hls_target", base_dir, t) {
+    cg_target.init_module();
+
+    stream << hls_headers;
+}
+
 CodeGen_HLS_Testbench::CodeGen_HLS_Testbench(ostream &tb_stream, Target t)
-    : CodeGen_HLS_Base(tb_stream, t, CPlusPlusImplementation, ""),
-      cg_target("hls_target", t) {
+   : CodeGen_HLS_Base(tb_stream, t, CPlusPlusImplementation, ""),
+      cg_target("hls_target", "./", t) {
     cg_target.init_module();
 
     stream << hls_headers;

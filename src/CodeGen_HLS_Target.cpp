@@ -46,18 +46,17 @@ bool contain_for_loop(Stmt s) {
 
 }
 
-CodeGen_HLS_Target::CodeGen_HLS_Target(const string &name, Target t)
-    : target_name(name),
+CodeGen_HLS_Target::CodeGen_HLS_Target(const string &name, const string &path, Target t)
+    : target_name(name), base_dir(path),
       hdrc(hdr_stream, t, CodeGen_HLS_C::CPlusPlusHeader),
       srcc(src_stream, t, CodeGen_HLS_C::CPlusPlusImplementation) { }
-
 
 CodeGen_HLS_Target::~CodeGen_HLS_Target() {
     hdr_stream << "#endif\n";
 
     // write the header and the source streams into files
-    string src_name = target_name + ".cpp";
-    string hdr_name = target_name + ".h";
+    string src_name = base_dir + target_name + ".cpp";
+    string hdr_name = base_dir + target_name + ".h";
     ofstream src_file(src_name.c_str());
     ofstream hdr_file(hdr_name.c_str());
     src_file << src_stream.str() << endl;

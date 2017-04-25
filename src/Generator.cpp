@@ -79,6 +79,9 @@ Outputs compute_outputs(const Target &target,
     }
     if (options.emit_cpp) {
         output_files.c_source_name = base_path + get_extension(".cpp", options);
+    } 
+    if (options.emit_cpp_hls) {
+        output_files.hls_source_name = base_path + get_extension(".cpp", options);
     }
     if (options.emit_stmt) {
         output_files.stmt_name = base_path + get_extension(".stmt", options);
@@ -870,6 +873,8 @@ int generate_filter_main(int argc, char **argv, std::ostream &cerr) {
                 emit_options.emit_static_library = true;
             } else if (opt == "cpp_stub") {
                 emit_options.emit_cpp_stub = true;
+            } else if (opt == "cpp_hls") {
+                emit_options.emit_cpp_hls = true;
             } else if (!opt.empty()) {
                 cerr << "Unrecognized emit option: " << opt
                      << " not one of [assembly, bitcode, cpp, h, html, o, static_library, stmt, cpp_stub], ignoring.\n";

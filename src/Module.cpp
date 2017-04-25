@@ -357,8 +357,17 @@ void Module::compile(const Outputs &output_files) const {
     }
     if (!output_files.hls_source_name.empty()) {
         debug(1) << "Module.compile(): hls_source_name " << output_files.hls_source_name << "\n";
+
+        // Get the base directory
+        std::string path = output_files.hls_source_name;
+        std::string::size_type n;
+        n = path.rfind("/");
+        path.replace(n, std::distance(path.begin(), path.end()) - n , "/" );
+
+        debug(3) << "FILE " << path << " output " << output_files.hls_source_name << "\n";
+
         std::ofstream file(output_files.hls_source_name);
-        Internal::CodeGen_HLS_Testbench cg(file, target());
+        Internal::CodeGen_HLS_Testbench cg(path, file, target());
         cg.compile(*this);
     }
     if (!output_files.zynq_c_source_name.empty()) {

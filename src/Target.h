@@ -66,6 +66,7 @@ struct Target {
         NoRuntime = halide_target_feature_no_runtime,
         Metal = halide_target_feature_metal,
         Zynq = halide_target_feature_zynq,
+        HLS = halide_target_feature_cpp_hls,
         MinGW = halide_target_feature_mingw,
         CPlusPlusMangling = halide_target_feature_c_plus_plus_mangling,
         LargeBuffers = halide_target_feature_large_buffers,
@@ -175,6 +176,10 @@ struct Target {
      * TODO: Should OpenGLCompute be included here? */
     bool has_gpu_feature() const {
         return has_feature(CUDA) || has_feature(OpenCL) || has_feature(Metal);
+    }
+
+    bool has_hls_feature() const {
+        return has_feature(HLS);
     }
 
     /** Does this target allow using a certain type. Generally all

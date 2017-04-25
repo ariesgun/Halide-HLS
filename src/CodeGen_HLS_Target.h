@@ -30,7 +30,7 @@ class CodeGen_HLS_Target {
 public:
     /** Initialize a C code generator pointing at a particular output
      * stream (e.g. a file, or std::cout) */
-    CodeGen_HLS_Target(const std::string &name, Target t);
+    CodeGen_HLS_Target(const std::string &name, const std::string &path, Target t);
     virtual ~CodeGen_HLS_Target();
 
     void init_module();
@@ -61,6 +61,7 @@ protected:
 
     /** A name for the HLS target */
     std::string target_name;
+    std::string base_dir;
 
     /** String streams for building header and source files. */
     // @{

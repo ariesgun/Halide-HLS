@@ -20,6 +20,7 @@ namespace Internal {
  */
 class CodeGen_HLS_Testbench : public CodeGen_HLS_Base {
 public:
+    CodeGen_HLS_Testbench(const std::string base_dir, std::ostream &tb_stream, Target t);
     CodeGen_HLS_Testbench(std::ostream &tb_stream, Target t);
     ~CodeGen_HLS_Testbench();
 

@@ -480,10 +480,12 @@ class BuildDAGForFunction : public IRVisitor {
                 tap.is_func = false;
                 tap.param = p.second;
                 internal_assert(tap.param.is_buffer());
+                debug(3) << "Tap param " << tap << "\n";
                 for (int i = 0; i < tap.param.dimensions(); i++) {
                     StencilDimSpecs dim_specs;
                     dim_specs.min_pos = tap.param.min_constraint(i);
                     Expr extent = tap.param.extent_constraint(i);
+                    debug(3) << "ARIES tap_name: " << tap.name << " extent " << extent << "\n";
                     const IntImm *extent_int = extent.as<IntImm>();
                     internal_assert(extent_int) << "tap window extent ("
                                                 << extent << ") is not a const.\n";

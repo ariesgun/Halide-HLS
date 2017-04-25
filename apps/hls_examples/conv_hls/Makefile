@@ -16,7 +16,7 @@ pipeline: pipeline.cpp
 	$(CXX) $(CXXFLAGS) -Wall -g $^ $(LIB_HALIDE) -o $@ $(LDFLAGS) -ltinfo
 
 pipeline_hls.cpp pipeline_native.o pipeline_cuda.o: pipeline
-	HL_DEBUG_CODEGEN=0 ./pipeline
+	HL_DEBUG_CODEGEN=3 ./pipeline
 
 run: run.cpp pipeline_hls.cpp hls_target.cpp pipeline_native.o
 	$(CXX) $(CXXFLAGS) -O1 -DNDEBUG $(HLS_CXXFLAGS) -g -Wall -Werror $^ -lpthread -ldl -o $@

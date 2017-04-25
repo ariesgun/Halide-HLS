@@ -629,14 +629,15 @@ void CodeGen_C::compile(const LoweredFunc &f) {
         // And also the metadata.
         stream << "const struct halide_filter_metadata_t *" << simple_name << "_metadata() HALIDE_FUNCTION_ATTRS;\n";
     } else {
+        /*
         stream << "\n"
                << "int " << simple_name << "_argv(void **args) HALIDE_FUNCTION_ATTRS ";
         open_scope();
         for (size_t i = 0; i < args.size(); i++) {
             do_indent();
             if (args[i].is_buffer()) {
-                stream << "buffer_t* " << print_name(args[i].name) 
-                       << " = *((buffer_t**) args[" << i << "]);\n";
+                stream << "halide_buffer_t* " << print_name(args[i].name) 
+                       << " = *((halide_buffer_t**) args[" << i << "]);\n";
             } else {
                 stream << print_type(args[i].type, AppendSpace) << print_name(args[i].name)
                        << " = *((" << print_type(args[i].type) << "*) args[" << i << "]);\n";
@@ -652,6 +653,7 @@ void CodeGen_C::compile(const LoweredFunc &f) {
         }
         stream << ");\n";
         close_scope("argv function");
+        */
     }
 
     if (!namespaces.empty()) {
@@ -1629,7 +1631,7 @@ int test1(struct halide_buffer_t *_buf_buffer, float _alpha, int32_t _beta, void
 }
 
 int test1_argv(void **args) HALIDE_FUNCTION_ATTRS {
- buffer_t* _buf = *((buffer_t**) args[0]);
+ halide_buffer_t* _buf = *((halide_buffer_t**) args[0]);
  float _alpha = *((float*) args[1]);
  int32_t _beta = *((int32_t*) args[2]);
  void const *__user_context = *((void const **) args[3]);

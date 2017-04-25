@@ -56,7 +56,7 @@ public:
         weight.set_bounds(1, 0, 5);
         weight.set_stride(0, 1);
         weight.set_stride(1, 5);
-
+        
         args.push_back(input);
         args.push_back(weight);
         args.push_back(bias);
@@ -128,17 +128,17 @@ private:
 
         local_sum(x, y, c) += cast<uint16_t>(in(x+r.x, y+r.y, c)) * weight(r.x+2, r.y+2);
         res(x, y, c) = cast<uint8_t>(local_sum(x, y, c) >> 8);
-
+    
         // unroll the reduction
-        local_sum.update(0).unroll(r.x).unroll(r.y);
+        //local_sum.update(0).unroll(r.x).unroll(r.y);
         return res;
     }
 };
 
 
 int main(int argc, char **argv) {
-    MyPipeline p1;
-    p1.compile_cpu();
+    //MyPipeline p1;
+    //p1.compile_cpu();
 
     MyPipeline p2;
     p2.compile_hls();

@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <assert.h>
+#include "HalideRuntime.h"
 
 ///Forward declarations
 template <typename T, size_t EXTENT_0, size_t EXTENT_1, size_t EXTENT_2, size_t EXTENT_3> struct Stencil;
@@ -231,7 +232,6 @@ typedef struct buffer_t {
 } buffer_t;
 #endif
 
-
 template <typename T, size_t EXTENT_0, size_t EXTENT_1, size_t EXTENT_2, size_t EXTENT_3>
 void buffer_to_stencil(const buffer_t *buffer,
                        Stencil<T, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> &stencil) {
@@ -251,6 +251,29 @@ void buffer_to_stencil(const buffer_t *buffer,
             idx_2 * buffer->stride[2] +
             idx_3 * buffer->stride[3];
         const T *address =  (T *)(ptr + offset * buffer->elem_size);
+        stencil(idx_0, idx_1, idx_2, idx_3) = *address;
+    }
+}
+
+template <typename T, size_t EXTENT_0, size_t EXTENT_1, size_t EXTENT_2, size_t EXTENT_3>
+void buffer_to_stencil(const halide_buffer_t *buffer,
+                       Stencil<T, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> &stencil) {
+    assert( EXTENT_0 == buffer->dim[0].extent);
+    assert((EXTENT_1 == buffer->dim[1].extent) || (EXTENT_1 == 1 && buffer->dim[1].extent == 0));
+    assert((EXTENT_2 == buffer->dim[2].extent) || (EXTENT_2 == 1 && buffer->dim[2].extent == 0));
+    assert((EXTENT_3 == buffer->dim[3].extent) || (EXTENT_3 == 1 && buffer->dim[3].extent == 0));
+    assert(sizeof(T) == buffer->elem_size);
+
+    for(size_t idx_3 = 0; idx_3 < EXTENT_3; idx_3++)
+    for(size_t idx_2 = 0; idx_2 < EXTENT_2; idx_2++)
+    for(size_t idx_1 = 0; idx_1 < EXTENT_1; idx_1++)
+    for(size_t idx_0 = 0; idx_0 < EXTENT_0; idx_0++) {
+        const uint8_t *ptr = buffer->host;
+        size_t offset = idx_0 * buffer->dim[0].stride +
+            idx_1 * buffer->dim[1].stride +
+            idx_2 * buffer->dim[2].stride +
+            idx_3 * buffer->dim[3].stride;
+        const T *address =  (T *)(ptr + offset * buffer->type.bytes());
         stencil(idx_0, idx_1, idx_2, idx_3) = *address;
     }
 }

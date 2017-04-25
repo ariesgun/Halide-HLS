@@ -235,7 +235,7 @@ void add_legacy_wrapper(Module module, const LoweredFunc &fn) {
     }
 
     string name = fn.name;
-    if (!module.target().has_feature(Target::CPlusPlusMangling)) {
+    if (!module.target().has_feature(Target::CPlusPlusMangling) || module.target().has_feature(Target::HLS)) {
         // We can't overload the same name, so add a suffix.
         name += "_old_buffer_t";
     }
