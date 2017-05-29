@@ -9,6 +9,7 @@
 
 #include <set>
 #include <map>
+#include <list>
 
 #include "IR.h"
 #include "Bounds.h"
@@ -30,6 +31,7 @@ struct BoundsInference_Stage {
 struct StencilDimSpecs {
     int size;  // stencil window size
     int step;     // stencil window shifting step
+    int up_step;  // stencil window for consumer
     Expr min_pos; // stencil origin position w.r.t. the original image buffer
     std::string loop_var;  // outer loop var that shifts this dimensions
     Interval store_bound;

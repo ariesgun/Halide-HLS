@@ -27,6 +27,129 @@ using std::ostream;
 
 
 namespace {
+
+class ExpandMulExpr : public IRMutator {
+    using IRMutator::visit;
+    int mul_factor;
+    bool expand_mul;
+
+    void visit(const Mul *var) {
+        if (!var->a.as<Mod>() && !var->a.as<Variable>() && !var->a.as<Min>() && var->b.as<IntImm>() && (var->b.as<IntImm>()->value != 0)) {
+            expand_mul = true;
+            mul_factor = var->b.as<IntImm>()->value;
+            expr = mutate(var->a);
+            mul_factor = 0;
+            expand_mul = false;
+        } else {
+            expr = var;
+        }
+
+        debug(3) << "Fully expanded into " << expr << "\n";
+    }
+
+    void visit(const Add *var) {
+        Expr temp_expr_a, temp_expr_b;
+
+        if (expand_mul) {
+            if (var->a.as<Add>() || var->a.as<Div>()) {
+                temp_expr_a = mutate(var->a);
+            } else {
+                temp_expr_a = Mul::make(var->a, IntImm::make(Int(32), mul_factor));
+            }
+
+            if (var->b.as<Add>() || var->b.as<Div>()) {
+                temp_expr_b = mutate(var->b);
+            } else {
+                temp_expr_b = Mul::make(var->b, IntImm::make(Int(32), mul_factor));
+            }
+
+            expr = Add::make(temp_expr_a, temp_expr_b);
+        } else {
+            expr = mutate(var->a) + mutate(var->b);
+        }
+
+    }
+
+    void visit(const Div *mul) {
+
+        if (expand_mul) {
+            if (mul->b.as<IntImm>()) {
+                expr = (expand_mul && mul->b.as<IntImm>()->value == mul_factor) ? mul->a : Mul::make(mul, IntImm::make(Int(32), mul_factor));
+            } else {
+                expr = mul;
+            }
+        } else {
+            expr = mul;
+        }
+    }
+
+public:
+    ExpandMulExpr() : mul_factor(0), expand_mul(false) {}
+
+};
+
+// Perform all the substitutions in a scope
+Expr expand_mul_expr(Expr e) {
+    Expr result = ExpandMulExpr().mutate(e);
+    debug(4) << "Expanded " << e << " into " << result << "\n";
+    return result;
+}
+
+class UpStepDifference : public IRMutator {
+bool is_downsampling;
+
+using IRMutator::visit;
+
+void visit(const Add *op) {
+
+    const Mul *tmp_a = op->a.as<Mul>();
+
+    if (is_downsampling) {
+        const IntImm *tmp_int = op->b.as<IntImm>();
+        internal_assert(tmp_int);
+
+        expr = Add::make(op->a, IntImm::make(Int(32), tmp_int->value + 1));   
+    } else if (tmp_a) {
+        // recursively process
+        expr = mutate(op->a) + op->b;
+    }
+
+    if (!is_downsampling) {
+        expr = op->a + op->b + 1;
+    }
+}
+
+void visit(const Div *op) {
+    //expr = brute_force(op);
+    if (op->a.as<Add>()) {
+        const Add *add = op->a.as<Add>();
+        if (add->b.as<IntImm>()) {
+            is_downsampling = true;
+        }
+    }
+    Expr temp = mutate(op->a);
+    expr = Div::make(temp, op->b);
+
+}
+
+void visit(const Mul *op) {
+    //const IntImm *tmp_b = op->b.as<IntImm>();
+    if (op->a.as<Div>()) {
+        expr = mutate(op->a) * mutate(op->b);
+    } else {
+        expr = op;
+    }
+    debug(3) << "Test " << expr << "\n";
+}
+
+public:
+UpStepDifference() : is_downsampling(false) {}
+};
+
+Expr up_step_difference(Expr expr) {
+return UpStepDifference().mutate(expr);
+}
+
 class ExpandExpr : public IRMutator {
     using IRMutator::visit;
     const Scope<Expr> &scope;
@@ -69,7 +192,9 @@ class SubstituteInConstants : public IRMutator {
 
     Scope<Expr> scope;
     void visit(const LetStmt *op) {
+        debug(3) << "SubstituteInConstants: " << op->name << " with value " << op->value << "\n";
         Expr value = simplify(mutate(op->value));
+        debug(3) << "SubstituteInConstants: after simplify " << value << "\n\n";
 
         Stmt body;
         if (is_const(value) || is_varmulcont(value)) {
@@ -85,6 +210,8 @@ class SubstituteInConstants : public IRMutator {
         } else {
             stmt = LetStmt::make(op->name, value, body);
         }
+        debug(3) << "SubstituteInConstants: End simplify" << value << "\n\n";
+
     }
 
     void visit(const Variable *op) {
@@ -101,6 +228,8 @@ class FiniteDifference : public IRMutator {
     string var;
 
     Expr brute_force(Expr e) {
+        debug(3) << "Before Mutation: " << e << "\n";
+        debug(3) << "After Mutation: " << (substitute(var, (Variable::make(Int(32), var)) + 1, e) - e) << "\n";
         return substitute(var, (Variable::make(Int(32), var)) + 1, e) - e;
     }
 
@@ -123,6 +252,8 @@ class FiniteDifference : public IRMutator {
     }
 
     void visit(const Variable *op) {
+        //debug(3) << "Varaible op: " << op->name << "\n";
+        //debug(3) << "Varaible var: " << var << "\n";
         if (op->name == var) {
             expr = make_one(op->type);
         } else if (scope.contains(op->name)) {
@@ -146,7 +277,19 @@ class FiniteDifference : public IRMutator {
     }
 
     void visit(const Div *op) {
-        expr = brute_force(op);
+        //expr = brute_force(op);
+
+        // Aries: I dont want to brute_force Div case
+        // Use case : bilateral grid, from interpolated to hw_output(x,y)
+        Expr tmp = simplify(mutate(op->a));
+        debug(3) << "test " << tmp << "\n";
+        const IntImm *tmp_int = tmp.as<IntImm>();
+        const IntImm *tmp_div = op->b.as<IntImm>(); 
+        if (tmp_int->value != 0) {
+            expr = DivImm::make(Int(32), tmp_int->value, tmp_div->value);
+        } else {
+            expr = IntImm::make(Int(32), 0);
+        }
     }
 
     void visit(const Mod *op) {
@@ -199,7 +342,9 @@ bool operator==(const StencilDimSpecs &left, const StencilDimSpecs &right) {
 
 ostream &operator<<(ostream &out, const StencilDimSpecs &dim) {
     out << "[" << dim.min_pos << ", "
-        << dim.size << ", looping "<< dim.loop_var << " step " << dim.step << "]"
+        << dim.size << ", looping "<< dim.loop_var << " step " << dim.step;
+    if (dim.up_step != 0) { out << "/" << dim.up_step; }
+    out << "]"
         << " over " << "[" << dim.store_bound.min << ", " << dim.store_bound.max << "]\n";
     return out;
 }
@@ -268,7 +413,18 @@ extract_stencil_specs(Box box, const set<string> &scan_loops,
         StencilDimSpecs dim_specs;
         Expr min = simplify(expand_expr(box[i].min, stencil_bounds));
         Expr max = simplify(expand_expr(box[i].max, stencil_bounds));
+        //Expr extent = simplify(expand_expr(max - min + 1, stencil_bounds));
+
         Expr extent = simplify(expand_expr(max - min + 1, stencil_bounds));
+        if (!is_const(extent)) {
+            extent = simplify(expand_expr(up_step_difference(max) - min, stencil_bounds));
+        }
+
+        debug(3) << "\nExtract Stencil Specs\n";
+        debug(3) << "Min : " << min << "\n";
+        debug(3) << "Max : " << max << "\n";
+        debug(3) << "Up step : " << up_step_difference(max) << "\n";
+        debug(3) << "Extent : " << extent << "\n";
 
         dim_specs.min_pos = min;
         const IntImm *extent_int = extent.as<IntImm>();
@@ -280,17 +436,43 @@ extract_stencil_specs(Box box, const set<string> &scan_loops,
         Expr store_max = simplify(expand_expr(box[i].max, store_bounds));
         dim_specs.store_bound = Interval(store_min, store_max);
 
+        debug(3) << "store_min : " << store_min << "\n";
+        debug(3) << "store_max : " << store_max << "\n";
+
         dim_specs.step = dim_specs.size;
         dim_specs.loop_var = "undef";
+        dim_specs.up_step = 0;
         // look for loop var that slides along this dimensions
         //for (size_t j = 0; j < scan_loops.size(); j++) {
         for (const string& scan_loop : scan_loops) {
+            debug(3) << "For loop " << scan_loop << "\n";
             if (expr_uses_var(min, scan_loop)) {
                 dim_specs.loop_var = scan_loop;
+                debug(3) << "Test-1: " << finite_difference(min, dim_specs.loop_var) << "\n";
                 Expr step = simplify(finite_difference(min, dim_specs.loop_var));
+                debug(3) << "Step: " << step << " with loop_var " << dim_specs.loop_var << "\n";
                 const IntImm *step_int = step.as<IntImm>();
-                internal_assert(step_int) << "stencil window step is not a const.\n";
-                dim_specs.step = step_int->value;
+                const DivImm *div_int  = step.as<DivImm>();
+
+                const Mul *op = step.as<Mul>();
+                if (op) {
+                    const DivImm *temp = op->a.as<DivImm>();
+                    const IntImm *temp_b = op->b.as<IntImm>();
+                    if (temp && temp->value_b == temp_b->value) {
+                        step_int = IntImm::make(Int(32), temp->value_a);
+                    }
+                }
+
+                internal_assert(step_int || div_int) << "stencil window step is not a const or it must be DivImm.\n";
+            
+                if (step_int) {
+                    dim_specs.step    = step_int->value;
+                } else if (div_int) {
+                    dim_specs.step    = div_int->value_a;
+                    dim_specs.up_step = div_int->value_b; 
+                }
+                
+                debug(3) << "So, step size is " << dim_specs.step << " with up_step " << dim_specs.up_step << "\n";
                 break;
             }
         }
@@ -310,12 +492,15 @@ merge_consumer_stencils(map<string, vector<StencilDimSpecs> > &consumer_stencils
     // First pass, figure out the size and min_pos of stencil windows
     // that encloses all consumer stencil windows.
     // Also does checks on assumptions regarding step and loop_var
+    debug(3) << "\nFirst Pass\n";
     for (size_t i = 0; i < num_of_dims; i++) {
         StencilDimSpecs dim_specs;
         dim_specs.size = first_stencil[i].size;
         dim_specs.step = first_stencil[i].step;
         dim_specs.min_pos = first_stencil[i].min_pos;
         dim_specs.loop_var = first_stencil[i].loop_var;
+        dim_specs.up_step = first_stencil[i].up_step;
+        debug(3) << "dim_specs: " << dim_specs.size << " | " << dim_specs.step << " | " << dim_specs.min_pos << " | " << dim_specs.loop_var << " | " << dim_specs.up_step << "\n";
         for (const auto& p : consumer_stencils) {
             internal_assert(p.second.size() == num_of_dims);
             const StencilDimSpecs &consumer_dim = p.second[i];
@@ -323,14 +508,23 @@ merge_consumer_stencils(map<string, vector<StencilDimSpecs> > &consumer_stencils
             // 1. the steps of all consumers are the same
             // 2. the loop vars of all consumers are the same
             internal_assert(consumer_dim.loop_var == dim_specs.loop_var);
-            internal_assert(dim_specs.loop_var == "undef"
+            internal_assert(dim_specs.loop_var == "undef"   
                             || consumer_dim.step == dim_specs.step); // step is valid only if loop_var is not "undef"
+
+            // Aries debug
+            debug(3) << "Kernel Stencil begin : size | step | min_pos | loop_var | up_step : " << p.first << "\n";
+            debug(3) << "  " << consumer_dim.size << " | " << consumer_dim.step << " | " << consumer_dim.min_pos << " | " << consumer_dim.loop_var << " | " << consumer_dim.up_step << "\n";
 
             // compute the max size of the stencil window
             dim_specs.size = dim_specs.size > consumer_dim.size ? dim_specs.size :
                 consumer_dim.size;
             // compute the globally minimum position
-            dim_specs.min_pos = simplify(min(dim_specs.min_pos, consumer_dim.min_pos));
+            dim_specs.min_pos = simplify(expand_mul_expr(min(dim_specs.min_pos, consumer_dim.min_pos)));
+
+            debug(3) << "dim_specs.size : "    << dim_specs.size << "\n";
+            debug(3) << "dim_specs.min_pos : " << dim_specs.min_pos << "\n";
+            debug(3) << "----\n\n";
+
         }
         if (dim_specs.loop_var == "undef")
             dim_specs.step = dim_specs.size;
@@ -339,9 +533,17 @@ merge_consumer_stencils(map<string, vector<StencilDimSpecs> > &consumer_stencils
 
     // Second pass, update the min_pos and store_bounds of each consumer stencil
     // if the size of stencil windows is different
+    debug(3) << "Second Pass PIN\n";
     for (auto& p : consumer_stencils) {
         for (size_t i = 0; i < num_of_dims; i++) {
             StencilDimSpecs &consumer_dim = p.second[i];
+
+            debug(3) << "Begin : min_pos | store_bound.min | store_bound.max | store_bound | size \n";
+            debug(3) << consumer_dim.min_pos << " | " << consumer_dim.store_bound.min << " | " << consumer_dim.store_bound.max << " | " <<
+                consumer_dim.size << "\n"; 
+            debug(3) << res[i].min_pos << " | " << res[i].store_bound.min << " | " << res[i].store_bound.max << " | " <<
+                res[i].size << "\n\n"; 
+
             if (consumer_dim.size != res[i].size) {
                 int size_difference = res[i].size - consumer_dim.size;
                 internal_assert(is_const(simplify(consumer_dim.min_pos - res[i].min_pos)));
@@ -362,14 +564,23 @@ merge_consumer_stencils(map<string, vector<StencilDimSpecs> > &consumer_stencils
                 consumer_dim.store_bound.max = simplify(consumer_dim.store_bound.max + right_enlarged_amount);
                 // increase the consumer window size
                 consumer_dim.size = res[i].size;
+
+
+                debug(3) << "End : min_pos | store_bound.min | store_bound.max | store_bound | size \n";
+                debug(3) << consumer_dim.min_pos << " | " << consumer_dim.store_bound.min << " | " << consumer_dim.store_bound.max << " | " << " | " <<
+                consumer_dim.size << "\n";
             }
         }
     }
 
     // Third pass, figure out the store bounds that encloses all consumer store bounds
+    debug(3) << "Third Pass\n";
     for (size_t i = 0; i < num_of_dims; i++) {
         StencilDimSpecs &dim_specs = res[i];
         dim_specs.store_bound = first_stencil[i].store_bound;
+
+        debug(3) << "dim_specs store bound begin : " << dim_specs.store_bound.min << " | " << dim_specs.store_bound.max;
+
         for (const auto& p : consumer_stencils) {
             internal_assert(p.second.size() == num_of_dims);
             const StencilDimSpecs &consumer_dim = p.second[i];
@@ -377,6 +588,9 @@ merge_consumer_stencils(map<string, vector<StencilDimSpecs> > &consumer_stencils
             Expr store_min = simplify(min(dim_specs.store_bound.min, consumer_dim.store_bound.min));
             Expr store_max = simplify(max(dim_specs.store_bound.max, consumer_dim.store_bound.max));
             dim_specs.store_bound = Interval(store_min, store_max);
+
+            debug(3) << "store min  end: " << dim_specs.store_bound.min << " vs " << consumer_dim.store_bound.min << " : " << store_min << "\n";
+            debug(3) << "store max  end: " << dim_specs.store_bound.max << " vs " << consumer_dim.store_bound.max << " : " << store_max << "\n";
         }
     }
     return res;
@@ -416,6 +630,8 @@ class BuildDAGForFunction : public IRVisitor {
 
     void visit(const ProducerConsumer *op) {
         // match store level at PC node in case the looplevel is outermost
+        debug(3) << "Entering ProducerConsumer " << op->name << " and func name " << func.name() << " with " << Var::outermost() << " and  " << store_level.match(LoopLevel(func, Var::outermost())) 
+            << "\n";
         if (op->is_producer &&
             op->name == func.name() &&
             store_level.match(LoopLevel(func, Var::outermost()))) {
@@ -425,6 +641,8 @@ class BuildDAGForFunction : public IRVisitor {
     }
 
     void visit(const For *op) {
+        debug(3) << "Entering For " << op->name << "\n";
+
         // scan loops are loops between store level (exclusive) and
         // the compute level (inclusive) of the accelerated function
         if (is_scan_loops && starts_with(op->name, func.name() + ".")) {
@@ -434,15 +652,18 @@ class BuildDAGForFunction : public IRVisitor {
             loop_maxes[op->name] = simplify(op->min + op->extent - 1);
         }
         if (store_level.match(op->name)) {
+            debug(3) << "Store level matches " << op->name << "\n";
             is_scan_loops = true;
         }
         if (compute_level.match(op->name)) {
+            debug(3) << "Compute level matches " << op->name << "\n";
             is_scan_loops = false;
         }
 
         // Recurse
         IRVisitor::visit(op);
 
+        debug(3) << "Past recurse " << op->name << " and func " << func.name() << "\n";
         if (compute_level.match(op->name)) {
             // Figure out how much of the accelerated func we're producing for each iteration
             Box box = box_provided(op->body, func.name());
@@ -451,6 +672,12 @@ class BuildDAGForFunction : public IRVisitor {
             Scope<Expr> stencil_bounds, store_bounds;
             for (int i = 0; i < func.dimensions(); i++) {
                 string stage_name = func.name() + ".s0." + func.args()[i];
+                debug(3) << "Stage " << stage_name << "\n";
+                debug(3) << "Box[i].min " << box[i].min << "\n";
+                debug(3) << "Box[i].max " << box[i].max << "\n";
+
+                debug(3) << "sub Box[i].max " << substitute(loop_mins, box[i].min) << "\n";
+                debug(3) << "sub max Box[i].max " << substitute(loop_maxes, box[i].max) << "\n";
                 stencil_bounds.push(stage_name + ".min", box[i].min);
                 stencil_bounds.push(stage_name + ".max", box[i].max);
                 store_bounds.push(stage_name + ".min", substitute(loop_mins, box[i].min));
@@ -463,7 +690,7 @@ class BuildDAGForFunction : public IRVisitor {
             // extract it correctly
             for (size_t i = 0; i < box.size(); i++) {
                 Expr store_min = substitute(loop_mins, box[i].min);
-                Expr store_max = substitute(loop_maxes, box[i].max);
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     Expr store_max = substitute(loop_maxes, box[i].max);
                 dims[i].store_bound = Interval(store_min, store_max);
             }
             HWKernel k(func, func.name());
@@ -485,7 +712,7 @@ class BuildDAGForFunction : public IRVisitor {
                     StencilDimSpecs dim_specs;
                     dim_specs.min_pos = tap.param.min_constraint(i);
                     Expr extent = tap.param.extent_constraint(i);
-                    debug(3) << "ARIES tap_name: " << tap.name << " extent " << extent << "\n";
+                    debug(3) << "ARIES tap_name: " << tap.name << " extent " << extent << " with min_pos " << dim_specs.min_pos << "\n";
                     const IntImm *extent_int = extent.as<IntImm>();
                     internal_assert(extent_int) << "tap window extent ("
                                                 << extent << ") is not a const.\n";
@@ -516,6 +743,7 @@ class BuildDAGForFunction : public IRVisitor {
             // first fast forward to the output stage
             int i = inlined_stages.size() - 1;
             while (i >= 0) {
+                debug(3) << "Inlined stages[" << i << "]: " << inlined_stages[i].name << "\n";
                 if (inlined_stages[i].name == func.name()) {
                     break;
                 }
@@ -581,6 +809,7 @@ class BuildDAGForFunction : public IRVisitor {
 
                         // merge the bounds given the name of the buffered kernel
                         if (consumer_boxes.count(buffered_kernel_name)) {
+                            debug(3) << "Start merging " << buffered_kernel_name << "\n";
                             merge_boxes(consumer_boxes[buffered_kernel_name], b);
                         } else {
                             consumer_boxes[buffered_kernel_name] = b;
@@ -616,7 +845,15 @@ class BuildDAGForFunction : public IRVisitor {
                         // TODO bring this check to a more expressive level
                         for (size_t i = 0; i < cur_kernel.dims.size(); i++) {
                             const StencilDimSpecs &dim = cur_kernel.dims[i];
-                            internal_assert(is_one(simplify(dim.store_bound.min == substitute(loop_mins, dim.min_pos))));
+
+                            debug(3) << "What is this\n";
+                            debug(3) << "dim.store_bound.min: " << dim.store_bound.min << "\n";
+                            debug(3) << "substitute loop_mins: " << substitute(loop_mins, dim.min_pos) << "\n";
+                            debug(3) << "dim.min_pos: " << dim.min_pos << "\n";
+                            debug(3) << "Perform: " << (dim.store_bound.min == substitute(loop_mins, dim.min_pos)) << "\n";
+                            debug(3) << "simplify: " << simplify(expand_mul_expr(dim.store_bound.min) == substitute(loop_mins, dim.min_pos)) << "\n";
+
+                            internal_assert(is_one(simplify(expand_mul_expr(dim.store_bound.min) == substitute(loop_mins, dim.min_pos))));
                         }
                     }
 
@@ -631,6 +868,13 @@ class BuildDAGForFunction : public IRVisitor {
                             // NOTE we use 'step' here since r we will have line buffer
                             stencil_max = simplify(cur_kernel.dims[i].min_pos + cur_kernel.dims[i].step - 1);
                         }
+
+                        debug(3) << "   Store bound values in scope: " << arg << "\n";
+                        debug(3) << "   cur_kernel.dims[i].min_pos: " << cur_kernel.dims[i].min_pos << "\n";
+                        debug(3) << "   stencil_max: " << stencil_max << "\n";
+                        debug(3) << "   cur_kernel.dims[i].store_bound.min: " << cur_kernel.dims[i].store_bound.min << "\n";
+                        debug(3) << "   cur_kernel.dims[i].store_bound.max: " << cur_kernel.dims[i].store_bound.max << "\n";
+
                         stencil_bounds.push(arg + ".min", cur_kernel.dims[i].min_pos);
                         stencil_bounds.push(arg + ".max", stencil_max);
                         store_bounds.push(arg + ".min", cur_kernel.dims[i].store_bound.min);
@@ -682,13 +926,13 @@ public:
         dag.compute_level = compute_level;
         dag.store_level = store_level;
         calculate_input_streams(dag);
-        /*
+        
         debug(0) << "after building producer pointers:" << "\n";
         for (const auto &p : dag.kernels)
             debug(0) << p.second << "\n";
         for (const auto &p : dag.taps)
             debug(0) << p.second << "\n";
-        */
+        
         return dag;
     }
 };
@@ -705,7 +949,7 @@ Stmt extract_hw_kernel_dag(Stmt s, const map<string, Function> &env,
         if(!func.schedule().is_accelerated())
             continue;
         debug(3) << "Found accelerate function " << func.name() << "\n";
-        debug(3) << func.schedule().store_level().to_string() << "\n";
+        debug(3) << func.schedule().accelerate_store_level().to_string() << "\n";
         BuildDAGForFunction builder(func, env, inlined_stages);
         dags.push_back(builder.build(s));
     }

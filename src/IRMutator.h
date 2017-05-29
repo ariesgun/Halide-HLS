@@ -44,6 +44,7 @@ protected:
     EXPORT virtual void visit(const IntImm *);
     EXPORT virtual void visit(const UIntImm *);
     EXPORT virtual void visit(const FloatImm *);
+    EXPORT virtual void visit(const DivImm *);
     EXPORT virtual void visit(const StringImm *);
     EXPORT virtual void visit(const Cast *);
     EXPORT virtual void visit(const Variable *);

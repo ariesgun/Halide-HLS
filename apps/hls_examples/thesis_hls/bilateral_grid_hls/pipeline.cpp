@@ -25,8 +25,8 @@ public:
           output("output"), hw_output("hw_output")
     {
         // Add a boundary condition
-        //clamped = BoundaryConditions::repeat_edge(input);
-        clamped(x, y) = input(x+40, y+40);
+        clamped = BoundaryConditions::repeat_edge(input);
+        //clamped(x, y) = input(x+40, y+40);
 
         // Construct the bilateral grid
         Expr val = clamped(x * s_sigma + r.x - s_sigma/2, y * s_sigma + r.y - s_sigma/2);
@@ -61,16 +61,20 @@ public:
         Expr xi = x/s_sigma;
         Expr yi = y/s_sigma;
         Func interpolated("interpolated");
+        
         interpolated(x, y, c) =
             lerp(lerp(lerp(blury(xi, yi, zi, c), blury(xi+1, yi, zi, c), xf),
                       lerp(blury(xi, yi+1, zi, c), blury(xi+1, yi+1, zi, c), xf), yf),
                  lerp(lerp(blury(xi, yi, zi+1, c), blury(xi+1, yi, zi+1, c), xf),
                       lerp(blury(xi, yi+1, zi+1, c), blury(xi+1, yi+1, zi+1, c), xf), yf), zf);
+        
+        //interpolated(x, y, c) += blury(xi, yi, zi, c);
 
         // Normalize
         val = interpolated(x, y, 0);
         Expr weight = max(interpolated(x, y, 1), 1); // to avoid underflow
         hw_output(x, y) = cast<uint8_t>(clamp(val * 64 / weight, 0, 255));
+        //hw_output(x, y) = clamped(x, y);
         output(x, y) = hw_output(x, y);
 
         // The comment constraints and schedules.
@@ -135,20 +139,30 @@ public:
     void compile_hls() {
         std::cout << "\ncompiling HLS code..." << std::endl;
 
-        output.tile(x, y, xo, yo, x_in, y_in, 256, 256);
-        output.tile(x_in, y_in, x_grid, y_grid, x_in, y_in, 8, 8);
+        //output.tile(x, y, xo, yo, x_in, y_in, 1920, 1080);
+        //output.tile(x_in, y_in, x_grid, y_grid, x_in, y_in, 8, 8);
 
-        blury.store_at(output, xo).compute_at(output, x_grid).reorder(x, y, z, c);
-        blurx.store_at(output, xo).compute_at(output, x_grid).reorder(x, y, z, c);
-        blurz.store_at(output, xo).compute_at(output, x_grid).reorder(z, x, y, c);
+        blury.linebuffer().compute_at(hw_output, x_in);
+        blurx.linebuffer().compute_at(hw_output, x_in);
+        blurz.linebuffer().compute_at(hw_output, x_in);
 
-        histogram.store_at(output, xo).compute_at(output, x_grid).reorder(c, z, x, y).unroll(c).unroll(z);
+        //blury.store_at(output, xo).compute_at(hw_output, x_in).reorder(x, y, z, c);
+        //blurx.store_at(output, xo).compute_at(hw_output, x_in).reorder(x, y, z, c);
+        //blurz.store_at(output, xo).compute_at(hw_output, x_in).reorder(z, x, y, c);
+
+        histogram.linebuffer().compute_at(blurz, x_in).reorder(c, z, x, y).unroll(c).unroll(z);
+        //histogram.store_at(output, xo).compute_at(output, x_grid).reorder(c, z, x, y).unroll(c).unroll(z);
         histogram.update().reorder(c, r.x, r.y, x, y).unroll(c);
 
-        clamped.store_at(output, xo).compute_at(output, x_grid);
-        input2.store_at(output, xo).compute_at(output, x_grid);
+        //clamped.store_at(output, xo).compute_at(output, xo);
+        //input2.store_at(output, xo).compute_at(output, xo);
+        clamped.compute_root();
+        input2.compute_root();
+        //input2.linebuffer().compute_at(hw_output, x_grid);
 
-        hw_output.compute_at(output, xo);
+        hw_output.tile(x, y, xo, yo, x_in, y_in, 1920, 1080);
+        hw_output.tile(x_in, y_in, x_grid, y_grid, x_in, y_in, 8, 8);
+        hw_output.compute_root();
         hw_output.accelerate({clamped, input2}, x_grid, xo);
 
         //output.print_loop_nest();
@@ -263,23 +277,23 @@ public:
         input_shuffled.compute_at(output, xo);
         input2_shuffled.compute_at(output, xo);
 
-        output_shuffled.tile(x_grid, y_grid, xo, yo, x_grid, y_grid, 60, 80);
-        output_shuffled.accelerate({input_shuffled, input2_shuffled}, x_grid, xo);
+        output_shuffled.tile(x_grid, y_grid, xo, yo, x_grid, y_grid, 480, 640);
+        output_shuffled.accelerate({input_shuffled, input2_shuffled}, x_in, xo);
 
         blury.linebuffer().reorder(x, y, z, c);
         blurx.linebuffer().reorder(x, y, z, c);
         blurz.linebuffer().reorder(z, x, y, c);
         histogram.linebuffer().reorder(c, z, x, y).unroll(c).unroll(z);
-        histogram.update().reorder(c, r.x, r.y, x, y).unroll(c);
+        histogram.update(0).reorder(c, r.x, r.y, x, y).unroll(c);
 
         //output.print_loop_nest();
 
         // Create the target for HLS simulation
         Target hls_target = get_target_from_environment();
         hls_target.set_feature(Target::CPlusPlusMangling);
-        output.compile_to_lowered_stmt("pipeline_hls.ir.html", args, HTML, hls_target);
-        output.compile_to_hls("pipeline_hls.cpp", args, "pipeline_hls", hls_target);
-        output.compile_to_header("pipeline_hls.h", args, "pipeline_hls", hls_target);
+        output.compile_to_lowered_stmt("pipeline_hls_opt.ir.html", args, HTML, hls_target);
+        output.compile_to_hls("pipeline_hls_opt.cpp", args, "pipeline_hls_opt", hls_target);
+        output.compile_to_header("pipeline_hls_opt.h", args, "pipeline_hls_opt", hls_target);
 
         // Create the Zynq platform target
         std::vector<Target::Feature> features({Target::Zynq});

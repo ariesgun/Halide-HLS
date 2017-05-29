@@ -1,6 +1,7 @@
 #include "StreamOpt.h"
 #include "IRMutator.h"
 #include "IROperator.h"
+#include "IREquality.h"
 #include "Scope.h"
 #include "Debug.h"
 #include "Substitute.h"
@@ -20,8 +21,55 @@ using std::map;
 using std::set;
 using std::pair;
 using std::vector;
+using std::list;
 
 namespace {
+
+class UpStepDifference : public IRMutator {
+    bool is_downsampling;
+    using IRMutator::visit;
+
+    void visit(const Add *op) {
+
+        const Mul *tmp_a = op->a.as<Mul>();
+
+        if (is_downsampling) {
+            const IntImm *tmp_int = op->b.as<IntImm>();
+            internal_assert(tmp_int);
+
+            expr = Add::make(op->a, IntImm::make(Int(32), tmp_int->value + 1));   
+        } else if (tmp_a) {
+            // recursively process
+            expr = mutate(op->a) + op->b;
+            if (!is_downsampling) {
+                expr = expr + 1;
+            }
+        } else {
+            expr = op->a + op->b + 1;
+        }
+    }
+
+    void visit(const Div *op) {
+        //expr = brute_force(op);
+        is_downsampling = true;
+        Expr temp = mutate(op->a);
+        expr = Div::make(temp, op->b);
+
+    }
+
+    void visit(const Mul *op) {
+        //const IntImm *tmp_b = op->b.as<IntImm>();
+        expr = mutate(op->a) * mutate(op->b);
+        debug(3) << "Test " << expr << "\n";
+    }
+
+public:
+    UpStepDifference() : is_downsampling(false) {}
+};
+
+Expr up_step_difference(Expr expr) {
+    return UpStepDifference().mutate(expr);
+}
 
 class ExpandExpr : public IRMutator {
     using IRMutator::visit;
@@ -49,9 +97,404 @@ Expr expand_expr(Expr e, const Scope<Expr> &scope) {
     return result;
 }
 
-
 }
 
+class ExpandMulExpr : public IRMutator {
+    using IRMutator::visit;
+    int mul_factor;
+    bool expand_mul;
+
+    void visit(const Mul *var) {
+        if (!var->a.as<Mod>() && !var->a.as<Variable>() && !var->a.as<Min>() && var->b.as<IntImm>() && (var->b.as<IntImm>()->value != 0)) {
+            expand_mul = true;
+            mul_factor = var->b.as<IntImm>()->value;
+            expr = mutate(var->a);
+            mul_factor = 0;
+            expand_mul = false;
+        } else {
+            expr = var;
+        }
+
+        debug(3) << "Fully expanded into " << expr << "\n";
+    }
+
+    void visit(const Add *var) {
+        Expr temp_expr_a, temp_expr_b;
+
+        if (expand_mul) {
+            if (var->a.as<Add>() || var->a.as<Div>()) {
+                temp_expr_a = mutate(var->a);
+            } else {
+                temp_expr_a = Mul::make(var->a, IntImm::make(Int(32), mul_factor));
+            }
+
+            if (var->b.as<Add>() || var->b.as<Div>()) {
+                temp_expr_b = mutate(var->b);
+            } else {
+                temp_expr_b = Mul::make(var->b, IntImm::make(Int(32), mul_factor));
+            }
+
+            expr = Add::make(temp_expr_a, temp_expr_b);
+        } else {
+            expr = mutate(var->a) + mutate(var->b);
+        }
+
+    }
+
+    void visit(const Div *mul) {
+
+        if (expand_mul) {
+            if (mul->b.as<IntImm>()) {
+                expr = (expand_mul && mul->b.as<IntImm>()->value == mul_factor) ? mul->a : Mul::make(mul, IntImm::make(Int(32), mul_factor));
+            } else {
+                expr = mul;
+            }
+        } else {
+            expr = mul;
+        }
+    }
+
+public:
+    ExpandMulExpr() : mul_factor(0), expand_mul(false) {}
+
+};
+
+// Perform all the substitutions in a scope
+Expr expand_mul_expr(Expr e) {
+    Expr result = ExpandMulExpr().mutate(e);
+    debug(4) << "Expanded " << e << " into " << result << "\n";
+    return result;
+}
+
+class ChangeOffset : public IRMutator {
+
+    Expr offset;
+    bool offset_found;
+    Expr moved_expr;
+    int count;
+    bool insert_offset;
+    bool remove_offset;
+    //std::set<Expr> set_offsets;
+    Expr op_a; 
+    Expr temp_b;
+    bool is_equal;
+
+    using IRMutator::visit;
+
+    void visit(const Variable *op) {
+        if (insert_offset) {
+            insert_offset  = false;
+            remove_offset  = true;
+            temp_b = op;
+            op_a = mutate(op_a);
+            if (is_equal) { 
+                expr = make_zero(Int(32));
+                is_equal = false;
+            } else {
+                expr = op;
+            }
+            debug(3) << "State of op_a " << op_a << "\n\n";
+            insert_offset  = true;
+            remove_offset  = false;
+        } else if (remove_offset)  {
+            debug(3) << "CHANGEOFFSET ARIES: " << op->name << " and " << temp_b << "\n";
+            if (equal(temp_b, op)) {
+                debug(3) << " Equal\n";
+                is_equal = true;
+                expr = make_zero(Int(32));
+            } else {
+                expr = op;
+            }
+        } else {
+            expr = op;
+        }
+    }
+
+    void visit(const Mul *op) {
+        if (insert_offset) {
+            insert_offset  = false;
+            remove_offset  = true;
+            temp_b = op;
+            op_a = mutate(op_a);
+            if (is_equal) { 
+                expr = make_zero(Int(32));
+                is_equal = false;
+            } else {
+                expr = op;
+            }
+            debug(3) << "State of op_a " << op_a << "\n\n";
+            insert_offset  = true;
+            remove_offset  = false;
+        } else if (remove_offset)  {
+            debug(3) << "CHANGEOFFSET ARIES: " << op->a << " * " << op->b << " and " << temp_b << "\n";
+            if (equal(temp_b, op)) {
+                debug(3) << " Equal\n";
+                is_equal = true;
+                expr = make_zero(Int(32));
+            } else {
+                expr = op;
+            }
+        } else {
+            expr = op;
+        }
+    }
+
+    void visit(const Div *op) {
+        if (insert_offset) {
+            insert_offset  = false;
+            remove_offset  = true;
+            temp_b = op;
+            op_a = mutate(op_a);
+            if (is_equal) { 
+                expr = make_zero(Int(32));
+                is_equal = false;
+            } else {
+                expr = op;
+            }
+            debug(3) << "State of op_a " << op_a << "\n\n";
+            insert_offset  = true;
+            remove_offset  = false;
+        } else if (remove_offset)  {
+            debug(3) << "CHANGEOFFSET ARIES: " << op->a << " / " << op->b << " and " << temp_b << "\n";
+            if (equal(temp_b, op)) {
+                debug(3) << " Equal\n";
+                is_equal = true;
+                expr = make_zero(Int(32));
+            } else {
+                expr = op;
+            }
+        } else {
+            expr = op;
+        }
+    }
+
+    void visit(const Min *op) {
+        if (insert_offset) {
+            insert_offset  = false;
+            remove_offset  = true;
+            temp_b = op;
+            op_a = mutate(op_a);
+            if (is_equal) { 
+                expr = make_zero(Int(32));
+                is_equal = false;
+            } else {
+                expr = op;
+            }
+            debug(3) << "State of op_a " << op_a << "\n\n";
+            insert_offset  = true;
+            remove_offset  = false;
+        } else if (remove_offset)  {
+            debug(3) << "CHANGEOFFSET ARIES: " << op->a << " min " << op->b << " and " << temp_b << "\n";
+            if (equal(temp_b, op)) {
+                debug(3) << " Equal\n";
+                is_equal = true;
+                expr = make_zero(Int(32));
+            } else {
+                expr = op;
+            }
+        } else {
+            expr = op;
+        }
+    }
+
+    void visit(const Sub *op) {
+        // Assume offset is in op->b
+        debug(3) << " Entering with op_a pre " << op->a << "\n";
+        op_a = simplify(expand_mul_expr(op->a));
+        debug(3) << " Entering with op_a " << op_a << "\n";
+
+        insert_offset = true;
+        Expr temp = mutate(op->b);
+        insert_offset = false;
+
+        debug(3) << " Remove Offset: " << op_a << " - " << temp << "\n";
+
+        expr = simplify(op_a - temp);
+
+        debug(3) << " Remove Offset post: " << expr << "\n";
+
+        /*
+        if (op->a.as<Add>()) {
+            offset = op->b;
+            count++;
+            expr = mutate(op->a) - op->b;
+            count--;
+        } else if (op->b.as<Add>()) {
+            offset = op->a;
+            count++;
+            expr = op->a - mutate(op->b);
+            count--;
+        } else {
+            expr = op;
+        }
+        */
+
+    }
+
+    /*
+    void visit(const Add *op) {
+
+        if (equal(op->a, offset)) {
+            offset_found = true;
+            moved_expr = op->b;
+        } else if (equal(op->b, offset)) {
+            debug(3) << "Found at this location : " << count << " with expr " << op->b << "\n";
+            offset_found = true;
+            moved_expr = op->a;
+        }
+
+        if (offset_found && count > 1) {
+            expr = offset;
+        } else if (offset_found && count == 1) {
+            expr = op;
+        } else {
+            expr = op;
+            if (op->a.as<Add>()) {
+                count++;
+                expr = mutate(op->a);
+                count--;
+
+                if (offset_found) {
+                    expr = expr + Add::make(op->b, moved_expr);
+                }
+            }
+
+            if (!offset_found && op->b.as<Add>()) {
+                count++;
+                expr = mutate(op->b);
+                count--;   
+
+                if (offset_found) {
+                    expr = Add::make(op->a, moved_expr) + expr;
+                }
+
+            }
+        }
+
+    }
+    */
+
+public:
+    ChangeOffset(Expr offset) : offset(offset), offset_found(false), count(0), insert_offset(false), remove_offset(false), is_equal(false) {}
+};
+
+Expr change_offset(Expr e, Expr offset) {
+    Expr result = ChangeOffset(offset).mutate(e);
+    return result;
+}
+
+class ExpandDivExpr : public IRMutator {
+    using IRMutator::visit;
+    int div_factor;
+    bool expand_div;
+
+    void visit(const Div *var) {
+        if (!var->a.as<Variable>() && !var->a.as<Min>() && var->b.as<IntImm>() && (var->b.as<IntImm>()->value != 0)) {
+            expand_div = true;
+            div_factor = var->b.as<IntImm>()->value;
+            expr = mutate(var->a);
+            div_factor = 0;
+            expand_div = false;
+        } else {
+            expr = var;
+        }
+
+        debug(3) << "Fully expanded into " << expr << "\n";
+    }
+
+    void visit(const Add *var) {
+        Expr temp_expr_a, temp_expr_b;
+
+        if (expand_div) {
+            if (var->a.as<Add>() || var->a.as<Mul>()) {
+                temp_expr_a = mutate(var->a);
+            } else {
+                temp_expr_a = Div::make(var->a, IntImm::make(Int(32), div_factor));
+            }
+
+            if (var->b.as<Add>() || var->b.as<Mul>()) {
+                temp_expr_b = mutate(var->b);
+            } else {
+                temp_expr_b = Div::make(var->b, IntImm::make(Int(32), div_factor));
+            }
+
+            expr = Add::make(temp_expr_a, temp_expr_b);
+        } else {
+            expr = mutate(var->a) + mutate(var->b);
+        }
+
+    }
+
+    void visit(const Mul *mul) {
+
+        if (mul->a.as<Variable>() && mul->b.as<IntImm>()) {
+            expr = (expand_div && mul->b.as<IntImm>()->value == div_factor) ? mul->a : mul;
+        } else if (mul->b.as<Variable>() && mul->a.as<IntImm>()) {
+            expr = (expand_div && mul->a.as<IntImm>()->value == div_factor) ? mul->b : mul;
+        } else {
+            expr = mul;
+        }
+    }
+
+public:
+    ExpandDivExpr() : div_factor(0), expand_div(false) {}
+
+};
+
+// Perform all the substitutions in a scope
+Expr expand_div_expr(Expr e) {
+    Expr result = ExpandDivExpr().mutate(e);
+    debug(4) << "Expanded " << e << " into " << result << "\n";
+    return result;
+}
+
+class SimplifyMod : public IRMutator {
+    int up_step;
+    string kernel_name;
+    const Scope<Expr> &scope;
+    const Expr offset;
+    bool mod;
+
+    using IRMutator::visit;
+
+    void visit(const Mod *op) {
+        const IntImm *temp = op->b.as<IntImm>();
+        if (temp && up_step == temp->value) {
+            //Expr tmp_a = op->a.as<Add>()->a;
+            mod = true;
+
+            Expr tmp = expand_mul_expr(Mul::make(offset, IntImm::make(Int(32), 2)));
+            debug(3) << "SimplifyMod tmp : " << tmp << "\n";
+            Expr tmp_a = simplify(Sub::make(op->a, tmp));
+            debug(3) << "SimplifyMod tmp_a : " << tmp_a << "\n";
+
+            //Expr tmp_a = mutate(op->a.as<Add>()->a);
+            mod = false;
+            expr = Mod::make(tmp_a, op->b);
+        } else {
+            expr = op;
+        }
+    }
+
+    void visit(const Variable *op) {
+        debug(3) << " Variable : " << op->name << "\n";
+        if (mod) {
+           expr = op;
+
+        } else {
+            expr = op;
+        }
+    }
+
+public:
+    SimplifyMod(int up_step, string kernel_name, const Scope<Expr> &scope, Expr offset) : up_step(up_step), kernel_name(kernel_name), scope(scope), offset(offset), mod(false) {}
+};
+
+Expr simplify_mod(Expr e, int up_step, string kernel_name, const Scope<Expr> &scope, Expr offset) {
+    Expr result = SimplifyMod(up_step, kernel_name, scope, offset).mutate(e);
+    return result;
+
+}
 
 class ReplaceReferencesWithStencil : public IRMutator {
     const HWKernel &kernel;
@@ -61,7 +504,9 @@ class ReplaceReferencesWithStencil : public IRMutator {
     using IRMutator::visit;
 
     void visit(const For *op) {
+        debug(3) << "ReplaceReferencesWithStencil op:" << op->name << " & kernel: " << kernel.name << "\n";
         if (!starts_with(op->name, kernel.name)) {
+            debug(3) << "Not starts_with\n";
             // try to simplify trivial reduction loops
             // TODO add assertions to check loop type
             Expr loop_extent = simplify(expand_expr(op->extent, scope));
@@ -104,6 +549,8 @@ class ReplaceReferencesWithStencil : public IRMutator {
             Expr old_min = op->min;
             Expr old_var_value = new_var + old_min;
 
+            debug(3) << " PIN_ARIES_1 " << op->name << "with new_var : " << old_var_value << "\n";
+
             // traversal down into the body
             scope.push(old_var_name, simplify(expand_expr(old_var_value, scope)));
             Stmt new_body = mutate(op->body);
@@ -125,12 +572,20 @@ class ReplaceReferencesWithStencil : public IRMutator {
             // Replace the arguments. e.g.
             //   func.s0.x -> func.stencil.x
             for (size_t i = 0; i < kernel.func.args().size(); i++) {
-                new_args[i] = simplify(expand_expr(mutate(op->args[i]) - kernel.dims[i].min_pos, scope));
+                debug(3) << "PIN_ARIES\n";
+                //debug(3) << "ReplaceReferences : " << i << " with op->args: " << op->args[i] << "\n";
+                //debug(3) << " ReplaceReferences : " << i << " with op->args: " << mutate(op->args[i]) << "\n";
+                //debug(3) << " ReplaceReferences kernel: " << kernel.name << " with min_pos: " << kernel.dims[i].min_pos << "\n";
+                //debug(3) << " ReplaceReferences kernel: " << kernel.name << " with min_pos: " << expand_expr(mutate(op->args[i]) - kernel.dims[i].min_pos, scope) << "\n";
+                new_args[i] = simplify(expand_mul_expr(expand_expr(mutate(op->args[i]) - kernel.dims[i].min_pos, scope)));
+                debug(3) << " ReplaceReferences kernel: " << kernel.name << " with new_args: " << new_args[i] << "\n";
             }
 
             vector<Expr> new_values(op->values.size());
             for (size_t i = 0; i < op->values.size(); i++) {
+                debug(3) << "PIN_ARIES pre" << op->values[i] << "\n";
                 new_values[i] = mutate(op->values[i]);
+                debug(3) << "PIN_ARIES " << new_values[i] << "\n";
             }
 
             stmt = Provide::make(stencil_name, new_values, new_args);
@@ -154,6 +609,8 @@ class ReplaceReferencesWithStencil : public IRMutator {
             string stencil_name = stencil_kernel.name + ".stencil";
             vector<Expr> new_args(op->args.size());
 
+            debug(3) << " PIN_ARIES_6 " << op->name << " and kernel name " << kernel.name << " and stencil_name " << stencil_kernel.name << "\n";
+            
             // Mutate the arguments.
             // The value of the new argment is the old_value - stencil.min_pos.
             // The new value shouldn't refer to old loop vars any more
@@ -172,7 +629,19 @@ class ReplaceReferencesWithStencil : public IRMutator {
                 }
 
                 Expr new_arg = old_arg - offset;
-                new_arg = simplify(expand_expr(new_arg, scope));
+                debug(3) << " SCope " << scope << "\n\n";
+                debug(3) << "   new_arg " << new_arg << "\n";
+                debug(3) << "   old_arg " << old_arg << "\n";
+                debug(3) << "   offset " << offset << "\n";
+                debug(3) << "   expand_expr " << expand_expr(new_arg, scope) << "\n";
+                debug(3) << "   expand_div " << expand_div_expr(expand_expr(new_arg, scope)) << "\n";
+                debug(3) << "   simplify_expand_div " << simplify(simplify_mod(expand_div_expr(expand_expr(new_arg, scope)),2, kernel.name, scope, expand_expr(offset, scope))) << "\n";
+                debug(3) << "   change_offset " << change_offset(simplify(simplify_mod(expand_div_expr(expand_expr(new_arg, scope)),2, kernel.name, scope, expand_expr(offset, scope))), expand_expr(offset, scope)) << "\n";
+                debug(3) << "   simplify change_offset " << simplify(change_offset(simplify(simplify_mod(expand_div_expr(expand_expr(new_arg, scope)),2, kernel.name, scope, expand_expr(offset, scope))), expand_expr(offset, scope))) << "\n";
+                new_arg = simplify(change_offset(simplify(simplify_mod(expand_div_expr(expand_expr(new_arg, scope)),2, kernel.name, scope, expand_expr(offset, scope))), expand_expr(offset, scope)));
+                //new_arg = simplify(expand_div_expr(expand_expr(new_arg, scope)));
+                //debug(3) << "   simplify_mod new_arg " << simplify_mod(new_arg, kernel.dims[i].step) << " with step: " << kernel.dims[i].step << "\n\n";
+                debug(3) << "   simplified new_arg " << new_arg << "\n\n";
                 // TODO check if the new_arg only depends on the loop vars
                 // inside the producer
                 new_args[i] = new_arg;
@@ -186,6 +655,7 @@ class ReplaceReferencesWithStencil : public IRMutator {
     }
 
     void visit(const Realize *op) {
+        debug(3) << " PIN_ARIES_3 " << op->name << "\n";
         // this must be a realize node of a inlined function
         internal_assert(dag.kernels.count(op->name));
         internal_assert(dag.kernels.find(op->name)->second.is_inlined);
@@ -219,6 +689,7 @@ class ReplaceReferencesWithStencil : public IRMutator {
     }
 
     void visit(const Let *op) {
+        debug(3) << " PIN_ARIES_4 " << op->name << "\n";
         Expr new_value = simplify(expand_expr(mutate(op->value), scope));
         scope.push(op->name, new_value);
         Expr new_body = mutate(op->body);
@@ -232,6 +703,7 @@ class ReplaceReferencesWithStencil : public IRMutator {
     }
 
     void visit(const LetStmt *op) {
+        debug(3) << " PIN_ARIES_5 " << op->name << "\n";
         Expr new_value = simplify(expand_expr(op->value, scope));
         scope.push(op->name, new_value);
         Stmt new_body = mutate(op->body);
@@ -269,8 +741,26 @@ Stmt create_dispatch_call(const HWKernel& kernel, int min_fifo_depth = 0) {
     for (size_t i = 0; i < kernel.dims.size(); i++) {
         dispatch_args.push_back(kernel.dims[i].size);
         dispatch_args.push_back(kernel.dims[i].step);
-        Expr store_extent = simplify(kernel.dims[i].store_bound.max -
-                                     kernel.dims[i].store_bound.min + 1);
+        //Expr store_extent = simplify(kernel.dims[i].store_bound.max -
+        //                             kernel.dims[i].store_bound.min + 1);
+
+        Expr store_extent;
+        //if (kernel.dims[i].up_step != 0) {
+            Expr temp = up_step_difference(kernel.dims[i].store_bound.max); 
+            debug(3) << "Temp " << up_step_difference(kernel.dims[i].store_bound.max) << "\n";
+            store_extent = simplify(expand_mul_expr(temp) -
+                                     expand_mul_expr(kernel.dims[i].store_bound.min));
+            if (is_zero(store_extent)) {
+                store_extent = make_one(Int(32));
+            }
+        //} else {
+        //    store_extent = simplify(kernel.dims[i].store_bound.max -
+        //                             kernel.dims[i].store_bound.min + 1);
+
+        //}
+
+        debug(3) << "max | min : " << kernel.dims[i].store_bound.max << " | " << kernel.dims[i].store_bound.min << "\n";
+        debug(3) << "Extent: " << store_extent << "\n";
         internal_assert(is_const(store_extent));
         dispatch_args.push_back((int)*as_const_int(store_extent));
     }
@@ -281,10 +771,35 @@ Stmt create_dispatch_call(const HWKernel& kernel, int min_fifo_depth = 0) {
         dispatch_args.push_back(std::max(min_fifo_depth, kernel.consumer_fifo_depths.find(p.first)->second));
         internal_assert(p.second.size() == kernel.dims.size());
         for (size_t i = 0; i < kernel.dims.size(); i++) {
-            Expr store_offset = simplify(p.second[i].store_bound.min -
-                                         kernel.dims[i].store_bound.min);
-            Expr store_extent = simplify(p.second[i].store_bound.max -
-                                         p.second[i].store_bound.min + 1);
+
+            debug(3) << "Consumer stencils\n";
+            debug(3) << p.second[i].store_bound.min << " | " << kernel.dims[i].store_bound.min << "\n";
+            debug(3) << p.second[i].store_bound.max << " | " << p.second[i].store_bound.min << "\n";
+
+            Expr store_offset = simplify(expand_mul_expr(p.second[i].store_bound.min) -
+                                         expand_mul_expr(kernel.dims[i].store_bound.min));
+            debug(3) << store_offset << "\n";
+
+            //Expr store_extent = simplify(p.second[i].store_bound.max -
+            //                             p.second[i].store_bound.min + 1);
+
+            Expr store_extent;
+            //if (kernel.dims[i].up_step != 0) {
+                Expr temp = up_step_difference(p.second[i].store_bound.max); 
+                debug(3) << "Temp " << up_step_difference(p.second[i].store_bound.max) << "\n";
+                store_extent = simplify(expand_mul_expr(temp) -
+                                         expand_mul_expr(p.second[i].store_bound.min));
+                if (is_zero(store_extent)) {
+                    store_extent = make_one(Int(32));
+                }
+            //} else {
+            //    store_extent = simplify(p.second[i].store_bound.max -
+            //                             p.second[i].store_bound.min + 1);
+
+            //}
+
+            debug(3) << "Extent: " << store_extent << "\n";
+
             internal_assert(is_const(store_offset));
             internal_assert(is_const(store_extent));
             dispatch_args.push_back((int)*as_const_int(store_offset));
@@ -322,13 +837,21 @@ Stmt add_input_stencil(Stmt s, const HWKernel &kernel, const HWKernel &input) {
     return s;
 }
 
-bool need_linebuffer(const HWKernel &kernel) {
+bool need_linebuffer(const HWKernelDAG &dag, const HWKernel &kernel) {
     // check if we need a line buffer
     bool ret = false;
-    for (size_t i = 0; i < kernel.dims.size(); i++) {
-        if (kernel.dims[i].size != kernel.dims[i].step) {
-            ret = true;
-            break;
+    
+    if (dag.input_kernels.count(kernel.name) > 0) {
+        if (!kernel.is_output && kernel.dims[0].size > 1) {
+            debug(3) << " Need_linebuffer: Kernel " << kernel.name << " is line-buffered\n";
+            ret =true;
+        }
+    } else {
+        for (size_t i = 0; i < kernel.dims.size(); i++) {
+            if (kernel.dims[i].size != kernel.dims[i].step) {
+                ret = true;
+                break;
+            }
         }
     }
     return ret;
@@ -339,9 +862,10 @@ bool need_linebuffer(const HWKernel &kernel) {
 // to generate the stencil.stream
 // The former is smaller, which only consist of the new pixels
 // sided in each shift of the stencil window.
-Stmt add_linebuffer(Stmt s, const HWKernel &kernel) {
+Stmt add_linebuffer(Stmt s, const HWKernelDAG &dag, const HWKernel &kernel) {
     Stmt ret;
-    if (need_linebuffer(kernel)) {
+    debug(3) << "Segmentation fault? " << kernel << "\n";
+    if (need_linebuffer(dag, kernel)) {
         // Before mutation:
         //       stmt...
         //
@@ -359,8 +883,18 @@ Stmt add_linebuffer(Stmt s, const HWKernel &kernel) {
         vector<Expr> linebuffer_args({update_stream_var, stream_var});
         // extract the buffer size, and put it into args
         for (size_t i = 0; i < kernel.dims.size(); i++) {
-            Expr store_extent = simplify(kernel.dims[i].store_bound.max -
-                                         kernel.dims[i].store_bound.min + 1);
+            debug(3) << "linebuffer_aries\n";
+            debug(3) << "min | max : " << kernel.dims[i].store_bound.min << " | " << kernel.dims[i].store_bound.max << "\n\n";
+            //Expr store_extent = simplify(kernel.dims[i].store_bound.max -
+            //                             kernel.dims[i].store_bound.min + 1);
+            Expr store_extent;
+            Expr temp = up_step_difference(kernel.dims[i].store_bound.max); 
+            debug(3) << "Temp " << temp << "\n";
+            store_extent = simplify(expand_mul_expr(temp) -
+                                     expand_mul_expr(kernel.dims[i].store_bound.min));
+           if (is_zero(store_extent)) {
+                store_extent = make_one(Int(32));
+            }
             linebuffer_args.push_back(store_extent);
         }
         Stmt linebuffer_call = Evaluate::make(Call::make(Handle(), "linebuffer", linebuffer_args, Call::Intrinsic));
@@ -408,6 +942,9 @@ Stmt transform_kernel(Stmt s, const HWKernelDAG &dag, const Scope<Expr> &scope) 
                         produce->name == consume->name);
 
         const HWKernel &kernel = dag.kernels.find(produce->name)->second;
+        
+        debug(3) << "Entering op " << produce->name << " " << consume->name << " " << kernel.name << "\n";
+
         internal_assert(!kernel.is_output);
         if (kernel.is_inlined) {
             // if it is a function inlined into the output function,
@@ -442,13 +979,15 @@ Stmt transform_kernel(Stmt s, const HWKernelDAG &dag, const Scope<Expr> &scope) 
         //       }
         //     }
         string stencil_name = kernel.name + ".stencil";
-        string stream_name = need_linebuffer(kernel) ?
+        string stream_name = need_linebuffer(dag, kernel) ?
             kernel.name + ".stencil_update.stream" : kernel.name + ".stencil.stream";
         Expr stencil_var = Variable::make(Handle(), stencil_name);
         Expr stream_var = Variable::make(Handle(), stream_name);
 
         // replacing the references to the original realization with refences to stencils
         Stmt new_produce = ReplaceReferencesWithStencil(kernel, dag, &scope).mutate(produce->body);
+
+        debug(3) << "\nNew_produce: " << new_produce << "\n";
 
         // syntax for write_stream()
         // write_stream(des_stream, src_stencil)
@@ -483,20 +1022,37 @@ Stmt transform_kernel(Stmt s, const HWKernelDAG &dag, const Scope<Expr> &scope) 
             string loop_var_name = kernel.name + "." + kernel.func.args()[i]
                 + ".__scan_dim_" + std::to_string(scan_dim++);
 
-            Expr store_extent = simplify(kernel.dims[i].store_bound.max -
-                                         kernel.dims[i].store_bound.min + 1);
+                debug(3) << "Loop_var_name : " << loop_var_name << "\n";
+
+            // Aries Add
+            // Check the condition in which the up_step is not zero. Hence, the extent realization can be correctly computed.
+            Expr store_extent;
+            //if (kernel.dims[i].up_step != 0) {
+                Expr temp = up_step_difference(kernel.dims[i].store_bound.max); 
+                debug(3) << "Temp change from max: " << kernel.dims[i].store_bound.max << " and min: " << kernel.dims[i].store_bound.min << " to "<< up_step_difference(kernel.dims[i].store_bound.max) << "\n";
+                store_extent = simplify(expand_mul_expr(temp) -
+                                         expand_mul_expr(kernel.dims[i].store_bound.min));
+                if (is_zero(store_extent)) {
+                    store_extent = make_one(Int(32));
+                }
+            //} else {
+            //    store_extent = simplify(kernel.dims[i].store_bound.max -
+            //                             kernel.dims[i].store_bound.min + 1);
+
+            //}
             debug(3) << "kernel " << kernel.name << " store_extent = " << store_extent << '\n';
 
             // check the condition for the new loop for sliding the update stencil
             const IntImm *store_extent_int = store_extent.as<IntImm>();
+
             internal_assert(store_extent_int);
             if (store_extent_int->value % kernel.dims[i].step != 0) {
                 // we cannot handle this scenario yet
-                internal_error
-                    << "Line buffer extent (" << store_extent_int->value
-                    << ") is not divisible by the stencil step " << kernel.dims[i].step << '\n';
+                //internal_error
+                //    << "Line buffer extent (" << store_extent_int->value
+                //    << ") is not divisible by the stencil step " << kernel.dims[i].step << '\n';
             }
-            int loop_extent = store_extent_int->value / kernel.dims[i].step;
+            int loop_extent = store_extent_int->value / kernel.dims[i].step + ((store_extent_int->value % kernel.dims[i].step != 0) ? 1 : 0);
 
             // add letstmt to connect old loop var to new loop var_name
             // FIXME this is not correct in general
@@ -508,7 +1064,7 @@ Stmt transform_kernel(Stmt s, const HWKernelDAG &dag, const Scope<Expr> &scope) 
         Stmt stream_consume = transform_kernel(consume->body, dag, scope);
 
         // Add line buffer and dispatcher
-        Stmt stream_realize = add_linebuffer(stream_consume, kernel);
+        Stmt stream_realize = add_linebuffer(stream_consume, dag, kernel);
 
         // create the PC node for update stream
         Stmt stream_pc = Block::make(ProducerConsumer::make(stream_name, true, scan_loops),
@@ -517,6 +1073,7 @@ Stmt transform_kernel(Stmt s, const HWKernelDAG &dag, const Scope<Expr> &scope) 
         // create a realizeation of the stencil stream
         ret = Realize::make(stream_name, kernel.func.output_types(), step_bounds, const_true(), stream_pc);
     } else {
+        debug(3) << "Entering else\n";
         // this is the output kernel of the dag
         const HWKernel &kernel = dag.kernels.find(dag.name)->second;
         internal_assert(kernel.is_output);
@@ -527,7 +1084,11 @@ Stmt transform_kernel(Stmt s, const HWKernelDAG &dag, const Scope<Expr> &scope) 
         Expr stencil_var = Variable::make(Handle(), stencil_name);
 
         // replacing the references to the original realization with refences to stencils
+        debug(3) << "\nARIES BEFORE PRODUCE: " << s << "\n\n";
+
         Stmt produce = ReplaceReferencesWithStencil(kernel, dag, &scope).mutate(s);
+
+        debug(3) << "\nARIES PRODUCE: " << produce << "\n\n";
 
         // syntax for write_stream()
         // write_stream(des_stream, src_stencil)
@@ -547,6 +1108,15 @@ Stmt transform_kernel(Stmt s, const HWKernelDAG &dag, const Scope<Expr> &scope) 
 
                 Expr loop_var = Variable::make(Int(32), loop_var_name);
                 Expr loop_max = make_const(Int(32), loop_extent - 1);
+
+
+                debug(3) << "Debug output dag : " << kernel.name << "\n";
+                debug(3) << "loop_var : " << loop_var << "\n";
+                debug(3) << "loop_max : " << loop_max << "\n";
+                debug(3) << "up_step : " << kernel.dims[i].step << "\n";
+                debug(3) << "store extent : " << store_extent_int->value << "\n";
+                debug(3) << "loop_extent : " << loop_extent << "\n\n";
+
                 write_args.push_back(loop_var);
                 write_args.push_back(loop_max);
             }
@@ -556,15 +1126,105 @@ Stmt transform_kernel(Stmt s, const HWKernelDAG &dag, const Scope<Expr> &scope) 
         Stmt stencil_pc = Block::make(ProducerConsumer::make(stencil_name, true, produce),
                                       ProducerConsumer::make(stencil_name, false, write_call));
 
+        // Detect if the input stream has different dims (e.g. up_step)
+        // Aries
+        /*
+        std::list<std::pair<std::string, std::vector<int>>> sorted_scale_factors;
+        std::vector<int> kernel_fac (kernel.dims.size());
+
+        for (const string& s : kernel.input_streams) {
+            const auto it = dag.kernels.find(s);
+            internal_assert(it != dag.kernels.end());
+            
+            const HWKernel cur_kernel = it->second;
+            std::vector<int> factor(kernel.dims.size());
+
+            for (size_t i = 0; i < kernel.dims.size(); i++) {
+                if (kernel.dims[i].loop_var == "undef") 
+                    continue;
+
+                debug(3) << "Test";
+                if (cur_kernel.dims[i].up_step != kernel.dims[i].up_step ) {
+                    // Insert for loop and then add_input_stencil
+                    factor[i] = (cur_kernel.dims[i].up_step > kernel.dims[i].up_step) ? cur_kernel.dims[i].up_step : kernel.dims[i].up_step;
+                } else {
+                    factor[i] = 0;
+                }
+                debug(3) << "Factor: " << i << " is " << factor[i] << "\n";
+            }
+
+            // Update step
+            for (size_t i = 0; i < kernel.dims.size(); i++) {
+                if (factor[i] > 0) {
+                    kernel_fac[i] = factor[i];
+                }
+            }
+
+            debug(3) << "Insert the new scale information\n";
+
+            if (sorted_scale_factors.empty()) {
+                sorted_scale_factors.push_back( std::pair<std::string, std::vector<int>>( cur_kernel.name, factor ));
+            } else {
+                // Scan throught the scale factors
+                std::list<std::pair<std::string, std::vector<int>>>::iterator factor_it = sorted_scale_factors.begin();
+                for (const auto& p : sorted_scale_factors) {
+                    if (p.second[0] <  factor[0] ) { // To be fixed}
+                        factor_it++;
+                    } else {
+                        break;
+                    }
+                }
+
+                sorted_scale_factors.insert(factor_it, std::pair<std::string, std::vector<int>>( cur_kernel.name, factor ));
+            }
+
+        }
+        */
         // create a realization of the stencil image
         Region bounds;
         for (StencilDimSpecs dim: kernel.dims) {
-            bounds.push_back(Range(0, dim.step));
+            //if (kernel_fac[0] != 0)
+            //    bounds.push_back(Range(0, kernel_fac[0]));
+            //else
+                bounds.push_back(Range(0, dim.step));
         }
         Stmt stencil_realize = Realize::make(stencil_name, kernel.func.output_types(), bounds, const_true(), stencil_pc);
 
         // add read_stream for each input stencil (producers fed to func)
         for (const string& s : kernel.input_streams) {
+            /*
+        int factor_temp = 0;
+        for (const auto& p : sorted_scale_factors) {
+            const string& s = p.first;
+
+            if ((p.second)[0] > factor_temp) {
+                // Add for_loop with the new factor scale
+
+                Stmt scan_loops = stencil_realize;
+                scan_dim = 0;
+
+                for(size_t i = 0; i < p.second.size(); i++) {
+                    if (kernel.dims[i].loop_var == "undef" )
+                        continue;
+
+                    string loop_var_name = kernel.name + "." + kernel.func.args()[i]
+                        + ".__scale_scan_dim_" + std::to_string(scan_dim++);
+
+                    int loop_extent = p.second[i];
+
+                    // add letstmt to connect old loop var to new loop var_name
+                    // FIXME this is not correct in general
+                    scan_loops = LetStmt::make(kernel.dims[i].loop_var, Variable::make(Int(32), loop_var_name + "_scale"), scan_loops);
+                    scan_loops = For::make(loop_var_name, 0, loop_extent, ForType::Serial, DeviceAPI::Host, scan_loops);
+               }
+
+               stencil_realize = Block::make(ProducerConsumer::make(stream_name, true, scan_loops),
+                          ProducerConsumer::make(stream_name, false, Evaluate::make(0)));
+
+            }
+
+            factor_temp = (p.second)[0];
+                */
             const auto it = dag.kernels.find(s);
             internal_assert(it != dag.kernels.end());
             stencil_realize = add_input_stencil(stencil_realize, kernel, it->second);
@@ -589,15 +1249,19 @@ Stmt transform_kernel(Stmt s, const HWKernelDAG &dag, const Scope<Expr> &scope) 
             internal_assert(store_extent_int);
             if (store_extent_int->value % kernel.dims[i].step != 0) {
                 // we cannot handle this scenario yet
-                internal_error
-                    << "Line buffer extent (" << store_extent_int->value
-                    << ") is not divisible by the stencil step " << kernel.dims[i].step << '\n';
+                //internal_error
+                //    << "Line buffer extent (" << store_extent_int->value
+                //    << ") is not divisible by the stencil step " << kernel.dims[i].step << '\n';
             }
             int loop_extent = store_extent_int->value / kernel.dims[i].step;
 
             // add letstmt to connect old loop var to new loop var_name
             // FIXME this is not correct in general
-            scan_loops = LetStmt::make(kernel.dims[i].loop_var, Variable::make(Int(32), loop_var_name), scan_loops);
+           // if (kernel_fac[i] != 0) {
+            //    scan_loops = LetStmt::make(kernel.dims[i].loop_var + "_scale", Variable::make(Int(32), loop_var_name) * IntImm::make(Int(32), kernel_fac[i]), scan_loops);
+            //} else {
+                scan_loops = LetStmt::make(kernel.dims[i].loop_var, Variable::make(Int(32), loop_var_name), scan_loops);
+            //}
             scan_loops = For::make(loop_var_name, 0, loop_extent, ForType::Serial, DeviceAPI::Host, scan_loops);
         }
 
@@ -650,10 +1314,13 @@ class StreamOpt : public IRMutator {
     using IRMutator::visit;
 
     void visit(const For *op) {
+        debug(3) << "Visit For " << op->name << "\n";
         if (!dag.store_level.match(op->name) && !dag.loop_vars.count(op->name)) {
             IRMutator::visit(op);
         } else if (dag.compute_level.match(op->name)) {
             internal_assert(dag.loop_vars.count(op->name));
+
+            debug(3) << "Entering dag.compute_level.match()\n";
 
             // walk inside of any let statements
             Stmt body = op->body;
@@ -669,8 +1336,12 @@ class StreamOpt : public IRMutator {
 
             // insert line buffers for input streams
             for (const string &kernel_name : dag.input_kernels) {
+                for (const auto &pair : dag.kernels) {
+                    std::cout << pair.first << ": " << pair.second << '\n';
+                }
                 const HWKernel &input_kernel = dag.kernels.find(kernel_name)->second;
-                new_body = add_linebuffer(new_body, input_kernel);
+                debug(3) << "debug seg fault : " << kernel_name << "\n";
+                new_body = add_linebuffer(new_body, dag, input_kernel);
             }
 
             // Rewrap the let statements
@@ -681,6 +1352,8 @@ class StreamOpt : public IRMutator {
             // remove the loop statement if it is one of the scan loops
             stmt = new_body;
         } else if (dag.loop_vars.count(op->name)){
+            debug(3) << "Entering dag.loop_vars.match() " << op->name << "\n";
+
             // remove the loop statement if it is one of the scan loops
             stmt = mutate(op->body);
         } else {
@@ -697,6 +1370,9 @@ class StreamOpt : public IRMutator {
                 lets.push_back(make_pair(let->name, let->value));
             }
 
+            debug(3) << "\nBody before mutating for " << dag.name << "\n";
+            debug(3) << body << "\n\n";
+
             Stmt new_body = mutate(body);
 
             //stmt = For::make(dag.name + ".accelerator", 0, 1, ForType::Serial, DeviceAPI::Host, body);
@@ -704,13 +1380,16 @@ class StreamOpt : public IRMutator {
             new_body = Block::make(ProducerConsumer::make(target_name, true, new_body),
                                    ProducerConsumer::make(target_name, false, Evaluate::make(0)));
 
+            debug(3) << "\nBody for " << target_name << "\n";
+            debug(3) << new_body << "\n\n";
+
             // add declarations of inputs and output (external) streams outside the hardware pipeline IR
             vector<string> external_streams;
             external_streams.push_back(dag.name);
             external_streams.insert(external_streams.end(), dag.input_kernels.begin(), dag.input_kernels.end());
             for (const string &name : external_streams) {
                 const HWKernel kernel = dag.kernels.find(name)->second;
-                string stream_name = need_linebuffer(kernel) ?
+                string stream_name = need_linebuffer(dag, kernel) ?
                     kernel.name + ".stencil_update.stream" : kernel.name + ".stencil.stream";
 
                 string direction = kernel.is_output ? "stream_to_buffer" : "buffer_to_stream";
@@ -738,7 +1417,13 @@ class StreamOpt : public IRMutator {
 
                 Region bounds;
                 for (StencilDimSpecs dim: kernel.dims) {
-                    bounds.push_back(Range(0, dim.step));
+                    debug(3) << "StencilDimSpecs information\n";
+                    debug(3) << "dim " << dim.loop_var << " size: " << dim.size << " step: " << dim.step << " up_step: " << dim.up_step << "\n";
+                    if (need_linebuffer(dag, kernel)) {
+                        bounds.push_back(Range(0, 1));
+                    } else{
+                        bounds.push_back(Range(0, dim.step));
+                    }
                 }
                 new_body = Realize::make(stream_name, kernel.func.output_types(), bounds, const_true(), Block::make(stream_subimg, new_body));
             }

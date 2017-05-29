@@ -135,19 +135,30 @@ public:
     void compile_hls() {
         std::cout << "\ncompiling HLS code..." << std::endl;
 
-        output.tile(x, y, xo, yo, x_in, y_in, 256, 256);
-        output.tile(x_in, y_in, x_grid, y_grid, x_in, y_in, 8, 8);
+        // New Schedule
+        output.tile(x, y, xo, yo, x_in, y_in, 480, 640);
 
-        blury.store_at(output, xo).compute_at(output, x_grid).reorder(x, y, z, c);
-        blurx.store_at(output, xo).compute_at(output, x_grid).reorder(x, y, z, c);
-        blurz.store_at(output, xo).compute_at(output, x_grid).reorder(z, x, y, c);
+        blury.linebuffer().reorder(x, y, z, c);
+        blurx.linebuffer().reorder(x, y, z, c);
+        blurz.linebuffer().reorder(z, x, y, c);
 
-        histogram.store_at(output, xo).compute_at(output, x_grid).reorder(c, z, x, y).unroll(c).unroll(z);
+        //output.tile(x, y, xo, yo, x_in, y_in, 256, 256);
+        //output.tile(x_in, y_in, x_grid, y_grid, x_in, y_in, 8, 8);
+
+        //blury.store_at(output, xo).compute_at(output, x_grid).reorder(x, y, z, c);
+        //blurx.store_at(output, xo).compute_at(output, x_grid).reorder(x, y, z, c);
+        //blurz.store_at(output, xo).compute_at(output, x_grid).reorder(z, x, y, c);
+
+        histogram.linebuffer().reorder(c, z, x, y).unroll(c).unroll(z);
         histogram.update().reorder(c, r.x, r.y, x, y).unroll(c);
 
-        clamped.store_at(output, xo).compute_at(output, x_grid);
-        input2.store_at(output, xo).compute_at(output, x_grid);
+        clamped.compute_at(hw_output, xo);
+        input2.compute_at(hw_output, xo);
+        //clamped.store_at(output, xo).compute_at(output, x_grid);
+        //input2.store_at(output, xo).compute_at(output, x_grid);
 
+        hw_output.tile(x, y, xo, yo, x_in, y_in, 480, 680);
+        hw_output.tile(x_in, y_in, x_grid, y_grid, x_in, y_in, 8, 8);
         hw_output.compute_at(output, xo);
         hw_output.accelerate({clamped, input2}, x_grid, xo);
 

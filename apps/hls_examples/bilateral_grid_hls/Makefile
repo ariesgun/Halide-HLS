@@ -25,7 +25,7 @@ out.png: run
 
 $(HLS_LOG): ../hls_support/run_hls.tcl pipeline_hls.cpp run.cpp
 	RUN_PATH=$(realpath ./) \
-	RUN_ARGS=$(realpath ./../../images/benchmark_8mp_gray.png) \
+	RUN_ARGS=$(realpath ./../../images/benchmark_1080p_gray.png) \
 	vivado_hls -f $< -l $(HLS_LOG)
 
 #pipeline_zynq.o: pipeline_zynq.c

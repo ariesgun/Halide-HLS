@@ -25,6 +25,7 @@ enum class IRNodeType {
     IntImm,
     UIntImm,
     FloatImm,
+    DivImm,
     StringImm,
     Cast,
     Variable,
@@ -188,6 +189,35 @@ struct IntImm : public ExprNode<IntImm> {
     }
 
     static const IRNodeType _type_info = IRNodeType::IntImm;
+};
+
+/** Division constants */
+// e.g. a/b
+struct DivImm : public ExprNode<DivImm> {
+    int64_t value_a;
+    int64_t value_b;
+
+    static const DivImm *make(Type t, int64_t value_a, int64_t value_b) {
+        internal_assert(t.is_int() && t.is_scalar())
+            << "DivImm must be a scalar Int\n";
+        internal_assert(t.bits() == 8 || t.bits() == 16 || t.bits() == 32 || t.bits() == 64)
+            << "DivImm must be 8, 16, 32, or 64-bit\n";
+
+        // Normalize the value by dropping the high bits
+        value_a <<= (64 - t.bits());
+        value_b <<= (64 - t.bits());
+        // Then sign-extending to get them back
+        value_a >>= (64 - t.bits());
+        value_b >>= (64 - t.bits());
+
+        DivImm *node = new DivImm;
+        node->type = t;
+        node->value_a = value_a;
+        node->value_b = value_b;
+        return node;
+    }
+
+    static const IRNodeType _type_info = IRNodeType::DivImm;
 };
 
 /** Unsigned integer constants */

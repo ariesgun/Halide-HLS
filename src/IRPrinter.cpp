@@ -277,6 +277,10 @@ void IRPrinter::visit(const FloatImm *op) {
     }
 }
 
+void IRPrinter::visit(const DivImm *op) {
+  stream << "(" << op->type << ")" << op->value_a << "/" << op->value_b;
+}
+
 void IRPrinter::visit(const StringImm *op) {
     stream << '"';
     for (size_t i = 0; i < op->value.size(); i++) {

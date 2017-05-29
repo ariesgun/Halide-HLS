@@ -15,13 +15,13 @@ pipeline: pipeline.cpp
 	$(CXX) $(CXXFLAGS) -Wall -g $^ $(LIB_HALIDE) -o $@ $(LDFLAGS) -ltinfo
 
 pipeline_hls.cpp pipeline_native.o pipeline_cuda.o pipeline_zynq.c pipeline_zynq.o: pipeline
-	HL_DEBUG_CODEGEN=0 ./pipeline
+	HL_DEBUG_CODEGEN=3 ./pipeline
 
 run: run.cpp pipeline_hls.cpp hls_target.cpp pipeline_native.o
 	$(CXX) $(CXXFLAGS) -O1 -DNDEBUG $(HLS_CXXFLAGS) -g -Wall -Werror $^ -lpthread -ldl $(IMAGE_IO_FLAGS) -o $@
 
 out.png: run
-	./run ../../../images/benchmark_8mp_gray.png
+	./run ../../../images/benchmark_1080p_gray.png
 
 $(HLS_LOG): ../../hls_support/run_hls.tcl pipeline_hls.cpp run.cpp
 	RUN_PATH=$(realpath ./) \

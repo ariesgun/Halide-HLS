@@ -38,13 +38,16 @@ class GetCallees : public IRVisitor {
 
     void visit(const Call *op) {
         IRVisitor::visit(op);
+
         if(op->call_type == Call::Halide && op->func.defined()) {
             Function f = Function(op->func);
             funcs[f.name()] = f;
+            debug(3) << "GetCalless with op: " << f.name() << " with type: Halide\n";
         } else if (op->call_type == Call::Image) {
             internal_assert(op->param.defined());
             Parameter p = op->param;
             params[p.name()] = p;
+            debug(3) << "GetCalless with op: " << p.name() << " with type: Image\n";
         }
     }
 
@@ -60,6 +63,7 @@ public:
 
     void mark() {
         vector<Function> path;
+        // Depth First Search
         dfs(output_func, path);
 
         internal_assert(input_names.size() == input_funcs.size())
@@ -124,6 +128,7 @@ public:
 
         // Current function doesn't call any other functions, find a valid path
         if (callees.empty()) {
+            debug(3) << "Apparently it is empty " << func.name() << "\n";
             if (visitor.params.empty()) {
                 // TODO have special flag here
                 user_warning << "Function " << func.name() << " can be statically evaluated. "
@@ -137,6 +142,7 @@ public:
         // DFS
         for (auto p : callees) {
             Function callee = p.second;
+            debug(3) << "DFS : " << callee.name() << "\n";
             path.push_back(func);
             dfs(callee, path);
             path.pop_back();

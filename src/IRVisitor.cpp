@@ -15,6 +15,9 @@ void IRVisitor::visit(const UIntImm *) {
 void IRVisitor::visit(const FloatImm *) {
 }
 
+void IRVisitor::visit(const DivImm *) {
+}
+
 void IRVisitor::visit(const StringImm *) {
 }
 
@@ -265,6 +268,9 @@ void IRGraphVisitor::visit(const UIntImm *) {
 }
 
 void IRGraphVisitor::visit(const FloatImm *) {
+}
+
+void IRGraphVisitor::visit(const DivImm *) {
 }
 
 void IRGraphVisitor::visit(const StringImm *) {

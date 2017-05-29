@@ -5,6 +5,7 @@
 
 #include "halide_benchmark.h"
 #include "HalideBuffer.h"
+#include "halide_image_io.h"
 
 using namespace Halide::Runtime;
 using namespace Halide::Tools;
@@ -18,18 +19,33 @@ using namespace Halide::Tools;
 double t;
 
 
-Buffer<uint16_t> blur(Buffer<uint16_t> in) {
-    Buffer<uint16_t> tmp(in.width()-8, in.height());
-    Buffer<uint16_t> out(in.width()-8, in.height()-2);
+Buffer<uint8_t> blur(Buffer<uint8_t> in) {
+    Buffer<uint8_t> tmp(in.width()-8, in.height(), 3);
+    Buffer<uint8_t> out(in.width()-8, in.height()-2, 3);
 
     t = benchmark(10, 1, [&]() {
         for (int y = 0; y < tmp.height(); y++)
-            for (int x = 0; x < tmp.width(); x++)
-                tmp(x, y) = (in(x, y) + in(x+1, y) + in(x+2, y))/3;
+            for (int x = 0; x < tmp.width(); x++) {
+                tmp(x, y, 0) = (in(x, y, 0) + in(x+1, y, 0) + in(x+2, y, 0))/3;
+                tmp(x, y, 1) = (in(x, y, 1) + in(x+1, y, 1) + in(x+2, y, 1))/3;
+                tmp(x, y, 2) = (in(x, y, 2) + in(x+1, y, 2) + in(x+2, y, 2))/3;
+
+                printf("In (%d, %d, 0) = %d\n", x, y, in(x, y, 0));
+                printf("In (%d, %d, 1) = %d\n", x, y, in(x, y, 1));
+                printf("In (%d, %d, 2) = %d\n", x, y, in(x, y, 2));
+
+                printf("Store (%d %d 0) = %d\n", x, y, tmp(x, y, 0));
+                printf("Store (%d %d 1) = %d\n", x, y, tmp(x, y, 1));
+                printf("Store (%d %d 2) = %d\n", x, y, tmp(x, y, 2));
+                
+            }
 
         for (int y = 0; y < out.height(); y++)
-            for (int x = 0; x < out.width(); x++)
-                out(x, y) = (tmp(x, y) + tmp(x, y+1) + tmp(x, y+2))/3;
+            for (int x = 0; x < out.width(); x++) {
+                out(x, y, 0) = (tmp(x, y, 0) + tmp(x, y+1, 0) + tmp(x, y+2, 0))/3;
+                out(x, y, 1) = (tmp(x, y, 1) + tmp(x, y+1, 1) + tmp(x, y+2, 1))/3;
+                out(x, y, 2) = (tmp(x, y, 2) + tmp(x, y+1, 2) + tmp(x, y+2, 2))/3;
+            }
     });
 
     return out;
@@ -195,35 +211,41 @@ Buffer<uint16_t> blur_halide(Buffer<uint16_t> in) {
 
 int main(int argc, char **argv) {
 
-    Buffer<uint16_t> input(6408, 4802);
+    //Buffer<uint16_t> input(6408, 4802);
+    Buffer<uint8_t> input = load_image(argv[1]);
 
+    /*
     for (int y = 0; y < input.height(); y++) {
         for (int x = 0; x < input.width(); x++) {
             input(x, y) = rand() & 0xfff;
         }
     }
+    */
 
-    Buffer<uint16_t> blurry = blur(input);
-    double slow_time = t;
+    Buffer<uint8_t> blurry = blur(input);
+    //double slow_time = t;
+    save_image(blurry, argv[2]);
 
-    Buffer<uint16_t> speedy = blur_fast(input);
-    double fast_time = t;
+    //Buffer<uint8_t> speedy = blur_fast(input);
+    //double fast_time = t;
 
     //Buffer<uint16_t> speedy2 = blur_fast2(input);
     //float fast_time2 = t;
 
-    Buffer<uint16_t> halide = blur_halide(input);
-    double halide_time = t;
+    //Buffer<uint8_t> halide = blur_halide(input);
+    //double halide_time = t;
 
     // fast_time2 is always slower than fast_time, so skip printing it
-    printf("times: %f %f %f\n", slow_time, fast_time, halide_time);
+    //printf("times: %f %f %f\n", slow_time, fast_time, halide_time);
 
+    /*
     for (int y = 64; y < input.height() - 64; y++) {
         for (int x = 64; x < input.width() - 64; x++) {
             if (blurry(x, y) != speedy(x, y) || blurry(x, y) != halide(x, y))
                 printf("difference at (%d,%d): %d %d %d\n", x, y, blurry(x, y), speedy(x, y), halide(x, y));
         }
     }
+    */
 
     return 0;
 }

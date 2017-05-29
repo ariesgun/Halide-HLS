@@ -361,8 +361,16 @@ void Module::compile(const Outputs &output_files) const {
         // Get the base directory
         std::string path = output_files.hls_source_name;
         std::string::size_type n;
+        debug(3) << "TEST1: " << n << "\n";
+        debug(3) << "TEST1 " << std::string::npos << "\n";
         n = path.rfind("/");
-        path.replace(n, std::distance(path.begin(), path.end()) - n , "/" );
+        debug(3) << "TEST " << std::string::npos << "\n";
+        debug(3) << "TEST3: " << n << "\n";
+        printf("n %ld\n", n);
+        if (n != std::string::npos)
+            path.replace(n, std::distance(path.begin(), path.end()) - n , "/" );
+        else 
+            path = "./";
 
         debug(3) << "FILE " << path << " output " << output_files.hls_source_name << "\n";
 

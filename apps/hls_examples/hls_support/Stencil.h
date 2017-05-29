@@ -262,7 +262,7 @@ void buffer_to_stencil(const halide_buffer_t *buffer,
     assert((EXTENT_1 == buffer->dim[1].extent) || (EXTENT_1 == 1 && buffer->dim[1].extent == 0));
     assert((EXTENT_2 == buffer->dim[2].extent) || (EXTENT_2 == 1 && buffer->dim[2].extent == 0));
     assert((EXTENT_3 == buffer->dim[3].extent) || (EXTENT_3 == 1 && buffer->dim[3].extent == 0));
-    assert(sizeof(T) == buffer->elem_size);
+    assert(sizeof(T) == buffer->type.bytes());
 
     for(size_t idx_3 = 0; idx_3 < EXTENT_3; idx_3++)
     for(size_t idx_2 = 0; idx_2 < EXTENT_2; idx_2++)
@@ -323,9 +323,11 @@ void subimage_to_stream(const struct halide_buffer_t *buf_noop,
     assert(subimage_extent_2 % EXTENT_2 == 0);
     assert(subimage_extent_3 % EXTENT_3 == 0);
     (void) buf_noop;  // avoid unused warnning
+    printf("stride_0 : %d %d\n", stride_0, subimage_extent_0);
+    printf("stride_1 : %d %d\n", stride_1, subimage_extent_1);
     for(size_t idx_3 = 0; idx_3 < (unsigned)subimage_extent_3; idx_3 += EXTENT_3)
     for(size_t idx_2 = 0; idx_2 < (unsigned)subimage_extent_2; idx_2 += EXTENT_2)
-    for(size_t idx_1 = 0; idx_1 < (unsigned)subimage_extent_1; idx_1 += EXTENT_1)
+    for(size_t idx_1 = 0; idx_1 < (unsigned)subimage_extent_1; idx_1 += EXTENT_1) {
     for(size_t idx_0 = 0; idx_0 < (unsigned)subimage_extent_0; idx_0 += EXTENT_0) {
         Stencil<T, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> stencil;
         for(size_t st_idx_3 = 0; st_idx_3 < EXTENT_3; st_idx_3++)
@@ -337,8 +339,11 @@ void subimage_to_stream(const struct halide_buffer_t *buf_noop,
                 (idx_2 + st_idx_2) * stride_2 +
                 (idx_3 + st_idx_3) * stride_3;
             stencil(st_idx_0, st_idx_1, st_idx_2, st_idx_3) = *((T *)subimage + offset);
+            //printf("%d ", stencil(st_idx_0, st_idx_1, st_idx_2, st_idx_3));
         }
         stream.write(stencil);
+    }
+    //printf("\n");
     }
 }
 
@@ -361,6 +366,7 @@ void stream_to_subimage(const struct buffer_t *buf_noop,
     for(size_t idx_0 = 0; idx_0 < (unsigned)subimage_extent_0; idx_0 += EXTENT_0) {
         AxiPackedStencil<T, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> axi_stencil = stream.read();
         Stencil<T, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> stencil = axi_stencil;
+
         for(size_t st_idx_3 = 0; st_idx_3 < EXTENT_3; st_idx_3++)
         for(size_t st_idx_2 = 0; st_idx_2 < EXTENT_2; st_idx_2++)
         for(size_t st_idx_1 = 0; st_idx_1 < EXTENT_1; st_idx_1++)
@@ -406,6 +412,19 @@ void stream_to_subimage(const struct halide_buffer_t *buf_noop,
     for(size_t idx_0 = 0; idx_0 < (unsigned)subimage_extent_0; idx_0 += EXTENT_0) {
         AxiPackedStencil<T, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> axi_stencil = stream.read();
         Stencil<T, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> stencil = axi_stencil;
+
+        /*
+        printf("Repeat edge Information %ld %ld\n", idx_0, idx_1);
+       printf(" %d %d %d %d %d %d %d %d \n", stencil(0,0), stencil(1,0), stencil(2,0), stencil(3,0), stencil(4,0), stencil(5,0), stencil(6,0), stencil(7,0));
+       printf(" %d %d %d %d %d %d %d %d \n", stencil(0,1), stencil(1,1), stencil(2,1), stencil(3,1), stencil(4,1), stencil(5,1), stencil(6,1), stencil(7,1));
+       printf(" %d %d %d %d %d %d %d %d \n", stencil(0,2), stencil(1,2), stencil(2,2), stencil(3,2), stencil(4,2), stencil(5,2), stencil(6,2), stencil(7,2));
+       printf(" %d %d %d %d %d %d %d %d \n", stencil(0,3), stencil(1,3), stencil(2,3), stencil(3,3), stencil(4,3), stencil(5,3), stencil(6,3), stencil(7,3));
+       printf(" %d %d %d %d %d %d %d %d \n", stencil(0,4), stencil(1,4), stencil(2,4), stencil(3,4), stencil(4,4), stencil(5,4), stencil(6,4), stencil(7,4));
+       printf(" %d %d %d %d %d %d %d %d \n", stencil(0,5), stencil(1,5), stencil(2,5), stencil(3,5), stencil(4,5), stencil(5,5), stencil(6,5), stencil(7,5));
+       printf(" %d %d %d %d %d %d %d %d \n", stencil(0,6), stencil(1,6), stencil(2,6), stencil(3,6), stencil(4,6), stencil(5,6), stencil(6,6), stencil(7,6));
+       printf(" %d %d %d %d %d %d %d %d \n", stencil(0,7), stencil(1,7), stencil(2,7), stencil(3,7), stencil(4,7), stencil(5,7), stencil(6,7), stencil(7,7));
+       printf("\n");
+    */
         for(size_t st_idx_3 = 0; st_idx_3 < EXTENT_3; st_idx_3++)
         for(size_t st_idx_2 = 0; st_idx_2 < EXTENT_2; st_idx_2++)
         for(size_t st_idx_1 = 0; st_idx_1 < EXTENT_1; st_idx_1++)
