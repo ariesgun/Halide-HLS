@@ -29,6 +29,7 @@ public:
 };
 
 Expr qualify(const string &prefix, Expr value) {
+    debug(3) << "Prefix : " << prefix << " and Value: " << value << "\n";
     QualifyExpr q(prefix);
     return q.mutate(value);
 }

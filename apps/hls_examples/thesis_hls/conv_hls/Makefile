@@ -18,7 +18,7 @@ $(BIN)/conv_exec: conv_generator.cpp $(GENERATOR_DEPS)
 
 $(BIN)/pipeline_hls.cpp $(BIN)/hls_target.cpp: $(BIN)/conv_exec
 	@-mkdir -p $(BIN)
-	HL_DEBUG_CODEGEN=0 $^ -n pipeline_hls -f pipeline_hls -o $(BIN) -e cpp_hls,h target=$(HL_TARGET)-hls-c_plus_plus_name_mangling
+	HL_DEBUG_CODEGEN=3 $^ -n pipeline_hls -f pipeline_hls -o $(BIN) -e cpp_hls,h target=$(HL_TARGET)-hls-c_plus_plus_name_mangling
 
 $(BIN)/pipeline_native.o: $(BIN)/conv_exec
 	@-mkdir -p $(BIN)

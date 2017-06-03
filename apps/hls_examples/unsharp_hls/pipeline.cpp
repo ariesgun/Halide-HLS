@@ -41,7 +41,7 @@ public:
                                     + 150 * cast<uint16_t>(in_bounded(1, x, y))
                                     + 29 * cast<uint16_t>(in_bounded(2, x, y))) >> 8);
 
-        if (false) {
+        if (true) {
             // 2D filter: seperate x and y dim
             sum_y(x, y) += kernel(win.x) * cast<uint16_t>(gray(x, y+win.x));
             blur_y(x, y) = cast<uint8_t>(sum_y(x, y) >> 8);
@@ -122,7 +122,7 @@ public:
 
         hw_output.accelerate({in_bounded}, xi, xo);
         gray.linebuffer().fifo_depth(ratio, 20);
-        //blur_y.linebuffer();
+        blur_y.linebuffer();
         ratio.linebuffer();
         hw_output.unroll(c);  // hw output bound
         in_bounded.fifo_depth(hw_output, 480*9); // hw input bounds

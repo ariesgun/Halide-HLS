@@ -5,6 +5,21 @@
 * 
 */
 
+// gray.cast_to(fixed_point_t).set_bit_width(total, fraction);
+// conv_x.cast_to(fixed_point_t).set_bit_width(total, fraction);
+// conv_y.cast_to(fixed_point_t).set_bit_width(total, fraction);
+// hw_output.cast_to(fixed_point_t).set_bit_width(total, fraction);
+
+// output(x, y) = x*y + p*q
+
+// Input and output are still using standard data C types.
+// Conversion from fixed-point to floating-point is handled by Xilinx fixed-point library.
+
+// The type for Expr val will be determined automatically from the input Funcs' types.
+// Mathematical operations that do not support fixed-point will be converted back to floating-point and than back to fixed point if it is used.
+
+// Data Type IR Transformation.
+
 #include "Halide.h"
 
 using namespace Halide;
@@ -14,11 +29,11 @@ namespace {
 class SobelConv: public Halide::Generator<SobelConv> {
 
 public:
-	Input<Buffer<uint8_t>>  input {"input", 3};
+	Input<Buffer<uint8_t>>  input   {"input", 3};
 	Input<Buffer<int8_t>>   kernel_x{"kernel_x", 2};
 	Input<Buffer<int8_t>>   kernel_y{"kernel_y", 2};
 	
-	Output<Buffer<uint8_t>> output{"output", 2};
+	Output<Buffer<uint8_t>> output  {"output", 2};
 
 	RDom win;
 
@@ -91,6 +106,7 @@ public:
         	conv_y.update(0).unroll(win.x).unroll(win.y);
 
 		} else {
+			
 			gray.compute_root();
 			
 			output.tile(x, y, xo, yo, xi, yi, 256, 256);

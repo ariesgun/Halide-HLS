@@ -37,6 +37,29 @@ class UnrollLoops : public IRMutator {
             IRMutator::visit(for_loop);
         }
     }
+
+    void visit(const Realize *op) {
+
+        debug(3) << "Visit Realize : " << op->name << "\n";
+        debug(3) << "  Type        : " << op->types[0] << "\n";
+        
+        IRMutator::visit(op);
+    }
+
+    void visit(const Variable *op) {
+        debug(3) << "Visit Variable : " << op->name << "\n";
+        debug(3) << "  Type        : " << op->type << "\n";
+        
+        IRMutator::visit(op);
+        
+    }
+
+    void visit(const Provide *op) {
+        debug(3) << "Visit Proide : " << op->name << "\n";
+        //debug(3) << "  Type        : " << op->type << "\n";
+        
+        IRMutator::visit(op);
+    }
 };
 
 Stmt unroll_loops(Stmt s) {

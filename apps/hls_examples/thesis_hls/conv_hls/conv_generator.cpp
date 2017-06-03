@@ -33,7 +33,8 @@ public:
         kernel(x, y) = (exp(-(x*x + y*y)/(2*sigma*sigma)) / (float)(2*M_PI*sigma*sigma));
 
         // define the algorithm
-        clamped = BoundaryConditions::repeat_edge(input);
+        //clamped = BoundaryConditions::repeat_edge(input);
+        clamped(x, y, c) = input(x, y, c);
         //conv1 = clamped;
         conv1(x, y, c) += clamped(x+win.x, y+win.y, c) * kernel(win.x, win.y);
 
@@ -66,10 +67,10 @@ public:
 
 			std::cout << "\ncompiling HLS code..." << std::endl;
 
-			kernel.compute_root();
+			//kernel.compute_root();
 			
 			clamped.compute_root(); // prepare the input for the whole image
-
+			
 			// HLS schedule: make a hw pipeline producing 'hw_output', taking
 	        // inputs of 'clamped', buffering intermediates at (output, xo) loop
 	        // level
@@ -77,7 +78,7 @@ public:
 	        //hw_output.tile(x, y, xo, yo, xi, yi, 1920, 1080).reorder(c, xi, yi, xo, yo);
 	        hw_output.tile(x, y, xo, yo, xi, yi, 256, 256).reorder(c, xi, yi, xo, yo);
 	        //hw_output.unroll(xi, 2);
-	        hw_output.accelerate({clamped}, xi, xo, {kernel});  // define the inputs and the output
+	        hw_output.accelerate({clamped}, xi, xo);  // define the inputs and the output
 	        conv1.linebuffer();
 	        conv1.unroll(c).unroll(x).unroll(y);
 	        hw_output.unroll(c);

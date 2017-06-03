@@ -14,7 +14,6 @@ class Blur: public Halide::Generator<Blur> {
 
 public:
 	Input<Buffer<uint8_t>>   input {"input", 3};
-	
 	Output<Buffer<uint8_t>>  output{"output", 3};
 
 	RDom win;
@@ -26,15 +25,25 @@ public:
 		clamped = BoundaryConditions::repeat_edge(input);
 
 		
-		blur_y(x, y, c) = (cast<uint16_t>(clamped(x, y, c)) + 
-							cast<uint16_t>(clamped(x+1, y, c)) + 
-							 cast<uint16_t>(clamped(x+2, y, c))) / 3;
-   		/*
+		blur_x(x, y, c) = ((clamped(x, y, c)) + 
+							(clamped(x+1, y, c)) + 
+							 (clamped(x+2, y, c))) / 3;
+   		
    		blur_y(x, y, c) = (blur_x(x, y, c)  + blur_x(x, y+1, c) + blur_x(x, y+2, c)) / 3;
-		*/
+		
 
    		output(x, y, c) = cast<uint8_t> (blur_y(x, y, c));
 
+		// in_reorder(c, x, y) = clamped(x, y, c);
+
+  //  		blur_x(c, x, y) = ((in_reorder(c, x, y)) + 
+		// 					(in_reorder(c, x+1, y)) + 
+		// 					 (in_reorder(c, x+2, y))) / 3;
+   		
+  //  		blur_y(c, x, y) = (blur_x(c, x, y)  + blur_x(c, x, y+1) + blur_x(c, x, y+2)) / 3;
+		
+
+  //  		output(x, y, c) = cast<uint8_t> (blur_y(c, x, y));
         /*
         // Set the arguments
         args.push_back(input);
@@ -53,13 +62,13 @@ public:
 
 			clamped.compute_root();
 
+
 			blur_y.compute_root();
-	        blur_y.tile(x, y, xo, yo, xi, yi, 1920, 1080).reorder(c, xi, yi, xo, yo);
+	        blur_y.tile(x, y, xo, yo, xi, yi, 640, 320).reorder(c, xi, yi, xo, yo);
 	        blur_y.accelerate({clamped}, xi, xo);  // define the inputs and the output
 
-	        //output.reorder(c, x, y);
-
-			//blur_x.linebuffer().unroll(c);
+	        output.reorder(c, x, y);
+			blur_x.linebuffer().reorder(c, x, y).unroll(c);
 			blur_y.unroll(c);
 
 		} else {
@@ -80,6 +89,7 @@ public:
 	Func blur_x{"blur_x"}; 
 	Func blur_y{"blur_y"};
 	Func clamped{"clamped"};
+	Func in_reorder{"in_reorder"};
 
 	Var x{"x"}, y{"y"}, c{"c"};
 	Var xi{"xi"}, xo{"xo"}, yi{"yi"}, yo{"yo"};

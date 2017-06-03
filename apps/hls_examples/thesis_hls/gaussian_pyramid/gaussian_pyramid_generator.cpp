@@ -46,27 +46,25 @@ public:
         //}
 
         // Make the processed Gaussian Pyramid
-        
+        /*
         Func gPyramid[maxJ];
         // Perform subsampling
         gPyramid[0](x, y, c) = floating(x, y, c);
         for (int j = 1; j < J; j++) {
             gPyramid[j](x, y, c) = downsample(gPyramid[j-1])(x, y, c);
         }
-        
+        */
         // Perform fake filtering
 
 
 
         // Perform upsampling
-        /*
         Func outGPyramid[maxJ];
         //outGPyramid[J-1](x, y, c) = gPyramid[J-1](x, y, c);
         outGPyramid[J-1](x, y, c) = floating(x, y, c);
         for (int j = J-2; j >= 0; j--) {
             outGPyramid[j](x, y, c) = upsample(outGPyramid[j+1])(x, y, c);//+ gPyramid[j](x, y, c);
         }
-        */
 
         /*
         // Get its laplacian pyramid
@@ -109,7 +107,7 @@ public:
         */
         Func output("output");
         // Convert back to 16-bit
-        output(x, y, c) = cast<uint16_t>(clamp(gPyramid[1](x, y, c), 0.0f, 1.0f) * 65535.0f);
+        output(x, y, c) = cast<uint16_t>(clamp(outGPyramid[0](x, y, c), 0.0f, 1.0f) * 65535.0f);
 
         /* THE SCHEDULE */
         //remap.compute_root();
@@ -120,35 +118,34 @@ public:
 
             //output.tile(x, y, xo, yo, xi, yi, 768, 1280);
 
-            gPyramid[0].linebuffer().compute_at(gPyramid[1], xi);
+            //gPyramid[0].linebuffer().compute_at(gPyramid[1], xi);
             //gPyramid[1].linebuffer().compute_at(gPyramid[2], xi);
             //gPyramid[2].linebuffer().compute_at(gPyramid[3], xi);
             //gPyramid[1].linebuffer().compute_at(outGPyramid[1], xi);
-            gPyramid[1].compute_root();
+            //gPyramid[1].compute_root();
 
             //outGPyramid[3].linebuffer().compute_at(outGPyramid[2], xi);
             //outGPyramid[2].linebuffer().compute_at(outGPyramid[1], xi);
-                //outGPyramid[1].linebuffer().compute_at(outGPyramid[0], x_grid);
+            outGPyramid[1].linebuffer().compute_at(outGPyramid[0], x_grid);
 
             //gPyramid[0].tile(x, y, xo, yo, xi, yi, 1536, 2560);
-            gPyramid[0].unroll(x).unroll(y);
-            gPyramid[1].tile(x, y, xo, yo, xi, yi, 192, 320);
+            //gPyramid[1].tile(x, y, xo, yo, xi, yi, 768, 1280);
             //gPyramid[2].tile(x, y, xo, yo, xi, yi, 384, 640);
             //gPyramid[3].tile(x, y, xo, yo, xi, yi, 192, 320);
 
-                //outGPyramid[0].tile(x, y, xo, yo, xi, yi, 3072, 5120);
-                //outGPyramid[0].tile(xi, yi, x_grid, y_grid, xi, yi, 2, 2);
+            outGPyramid[0].tile(x, y, xo, yo, xi, yi, 3072, 5120);
+            outGPyramid[0].tile(xi, yi, x_grid, y_grid, xi, yi, 2, 1);
             //outGPyramid[0].split(xi, x_grid, xi, 2);
-                //outGPyramid[0].unroll(xi).unroll(yi);
+            outGPyramid[0].unroll(xi).unroll(yi);
 
             //outGPyramid[0].tile(xi, yi, x_grid, y_grid, xi, yi, 2, 2);
             //outGPyramid[1].tile(x, y, xo, yo, xi, yi, 1536, 2560);
             //outGPyramid[2].tile(x, y, xo, yo, xi, yi, 384, 640);
             //outGPyramid[3].tile(x, y, xo, yo, xi, yi, 192, 320);
 
-                //outGPyramid[0].accelerate({floating}, x_grid, xo);
-            gPyramid[1].accelerate({floating}, xi, xo);
-                //outGPyramid[0].compute_root();
+            outGPyramid[0].accelerate({floating}, x_grid, xo);
+
+            outGPyramid[0].compute_root();
 /*
         if (get_target().has_gpu_feature()) {
             // gpu schedule
@@ -208,7 +205,6 @@ private:
 
         if (get_target().has_hls_feature()) {
             downx.linebuffer().compute_at(downy, x);
-            downx.unroll(y);
         }
 
         return downy;

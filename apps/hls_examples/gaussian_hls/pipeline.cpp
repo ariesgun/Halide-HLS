@@ -36,7 +36,7 @@ public:
         in_bounded(x, y) = in(x + 4, y + 4);
 
 
-        if (false) {
+        if (true) {
             // 2D filter: seperate x and y dim
             sum_y(x, y) += kernel(win.x) * cast<uint16_t>(in_bounded(x, y+win.x));
             blur_y(x, y) = cast<uint8_t>(sum_y(x, y) >> 8);
@@ -105,7 +105,7 @@ public:
 
         hw_output.accelerate({in_bounded}, xi, xo);
 
-        //blur_y.linebuffer().unroll(x).unroll(y);
+        blur_y.linebuffer().unroll(x).unroll(y);
 
         //output.print_loop_nest();
         // Create the target for HLS simulation
