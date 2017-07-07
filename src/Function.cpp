@@ -35,6 +35,10 @@ struct FunctionContents {
     mutable RefCount ref_count;
     std::string name;
     std::vector<Type> output_types;
+    Type casted_output_type;
+    std::vector<std::pair<Expr&, Type>> exprs_type; // List of casted expr type.
+    std::vector<std::pair<Expr&, Type>> exprs_args_type; // List of casted expr type for function's argument.
+    bool type_casted;
 
     Definition init_def;
     std::vector<Definition> updates;
@@ -52,7 +56,8 @@ struct FunctionContents {
 
     bool frozen;
 
-    FunctionContents() : extern_mangling(NameMangling::Default),
+    FunctionContents() : type_casted(false),
+                         extern_mangling(NameMangling::Default),
                          extern_uses_old_buffer_t(false),
                          trace_loads(false),
                          trace_stores(false),
@@ -752,6 +757,52 @@ int Function::dimensions() const {
 
 const std::vector<Type> &Function::output_types() const {
     return contents->output_types;
+}
+
+void Function::set_output_types(int i, Type t) const {
+    contents->output_types[i] = t;
+}
+
+bool Function::is_type_casted() const {
+    return contents->type_casted;
+}
+
+void Function::set_is_type_casted(bool val) const {
+    contents->type_casted = val;
+}
+
+Type Function::get_casted_output_type() const {
+    return contents->casted_output_type;
+}
+
+void Function::set_casted_output_type(Type t) const {
+    contents->casted_output_type = t;
+}
+
+void Function::insert_expr_cast_ref(std::pair<Expr&, Type> ref) const{
+    contents->exprs_type.push_back(ref);
+}
+
+const std::pair<Expr&, Type> Function::get_expr_cast_ref(int idx) const {
+    return contents->exprs_type[idx];
+}
+
+size_t Function::get_expr_cast_ref_size() const {
+    return contents->exprs_type.size();
+}
+
+void Function::insert_args_expr_cast_ref(std::pair<Expr&, Type> ref) const{
+    contents->exprs_args_type.push_back(ref);
+}
+
+const std::pair<Expr&, Type> Function::get_args_expr_cast_ref(int idx) const {
+    Internal::debug(3) << "Check size " << contents->exprs_args_type.size() << "\n";
+    Internal::debug(3) << " Content " << contents->exprs_args_type[0].second << "\n";
+    return contents->exprs_args_type[idx];
+}
+
+size_t Function::get_args_expr_cast_ref_size() const {
+    return contents->exprs_args_type.size();
 }
 
 const std::vector<Expr> &Function::values() const {

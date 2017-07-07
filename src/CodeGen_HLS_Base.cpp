@@ -20,6 +20,20 @@ using std::vector;
 using std::ostringstream;
 using std::to_string;
 
+
+string CodeGen_HLS_Base::print_additional_stencil_type(Stencil_Type stencil_type) {
+    ostringstream oss;
+    
+    if (stencil_type.elemType.is_fixed_ufixed_point()) {
+        oss << "Fixed<" << print_type(stencil_type.elemType);
+        oss << ", " << stencil_type.elemType.bits() << ", " << stencil_type.elemType.int_bits();
+    } else {
+        oss << "<" << print_type(stencil_type.elemType);
+    }
+
+    return oss.str();
+}
+
 string CodeGen_HLS_Base::print_stencil_type(Stencil_Type stencil_type) {
     ostringstream oss;
     // C: Stencil<uint16_t, 1, 1, 1> stencil_var;
@@ -27,7 +41,7 @@ string CodeGen_HLS_Base::print_stencil_type(Stencil_Type stencil_type) {
 
     switch(stencil_type.type) {
     case Stencil_Type::StencilContainerType::Stencil :
-        oss << "Stencil<" << print_type(stencil_type.elemType);
+        oss << "Stencil" << print_additional_stencil_type(stencil_type);
 
         for(const auto &range : stencil_type.bounds) {
             internal_assert(is_one(simplify(range.min == 0)));
@@ -36,8 +50,8 @@ string CodeGen_HLS_Base::print_stencil_type(Stencil_Type stencil_type) {
         oss << ">";
         break;
     case Stencil_Type::StencilContainerType::Stream :
-        oss << "hls::stream<PackedStencil<";
-        oss << print_type(stencil_type.elemType);
+        oss << "hls::stream<PackedStencil";
+        oss << print_additional_stencil_type(stencil_type);
 
         for(const auto &range : stencil_type.bounds) {
             internal_assert(is_one(simplify(range.min == 0)));
@@ -46,8 +60,8 @@ string CodeGen_HLS_Base::print_stencil_type(Stencil_Type stencil_type) {
         oss << "> >";
         break;
     case Stencil_Type::StencilContainerType::AxiStream :
-        oss << "hls::stream<AxiPackedStencil<";
-        oss << print_type(stencil_type.elemType);
+        oss << "hls::stream<AxiPackedStencil";
+        oss << print_additional_stencil_type(stencil_type);
 
         for(const auto &range : stencil_type.bounds) {
             internal_assert(is_one(simplify(range.min == 0)));
@@ -83,6 +97,38 @@ string CodeGen_HLS_Base::print_stencil_pragma(const string &name) {
     return string();
 }
 
+string CodeGen_HLS_Base::print_type(Type type, AppendSpaceIfNeeded space) {
+    ostringstream oss;
+
+    if (type.is_fixed_point()) {
+        oss << "ap_fixed<" << type.bits() << "," << type.int_bits() << "> ";
+        return oss.str();
+    } else if (type.is_ufixed_point()) {
+        oss << "ap_ufixed<" << type.bits() << "," << type.int_bits() << "> ";
+        return oss.str();
+    } else {
+        return CodeGen_C::print_type(type, space);
+    }
+}
+
+void CodeGen_HLS_Base::visit(const FixedPointImm *op) {
+    ostringstream oss;
+
+    if (op->is_signed) {
+        oss << "ap_fixed<" << op->type.bits() << "," << op->type.int_bits() << "> ";
+    } else {
+        oss << "ap_ufixed<" << op->type.bits() << "," << op->type.int_bits() << "> ";
+    }
+
+    if (op->is_float) {
+        oss << "(" << op->value << "f)";
+    } else {
+        oss << "(" << (uint64_t)op->value << ")";
+    }
+
+    id = oss.str();
+}
+
 void CodeGen_HLS_Base::visit(const Call *op) {
     if (op->name == "linebuffer") {
         //IR: linebuffer(buffered.stencil_update.stream, buffered.stencil.stream, extent_0[, extent_1, ...])
@@ -91,7 +137,18 @@ void CodeGen_HLS_Base::visit(const Call *op) {
         string a0 = print_expr(op->args[0]);
         string a1 = print_expr(op->args[1]);
         do_indent();
-        stream << "linebuffer<";
+
+        // Get stream_var info
+        const Variable *stream_var = op->args[0].as<Variable>();
+        bool is_fixed = false; Type t;
+        if (stream_var) {
+            internal_assert(stencils.contains(stream_var->name));
+            Stencil_Type stream_type = stencils.get(stream_var->name);
+            t = stream_type.elemType;
+            is_fixed = (t.is_fixed_point() || t.is_ufixed_point()) ? true : false;
+        }
+
+        stream << "linebuffer" << (is_fixed ? "Fixed" : "") << "<";
         for(size_t i = 2; i < op->args.size(); i++) {
             stream << print_expr(op->args[i]);
             if (i != op->args.size() -1)
@@ -128,6 +185,7 @@ void CodeGen_HLS_Base::visit(const Call *op) {
 
             internal_assert(stencils.contains(stencil_name));
             Stencil_Type stencil_type = stencils.get(stencil_name);
+            
             internal_assert(stencil_type.type == Stencil_Type::StencilContainerType::Stencil);
 
             // emit code declaring the packed stencil

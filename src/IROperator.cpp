@@ -54,6 +54,7 @@ bool is_const(const Expr &e) {
     if (e.as<IntImm>() ||
         e.as<UIntImm>() ||
         e.as<FloatImm>() ||
+        e.as<FixedPointImm>() ||
         e.as<StringImm>()) {
         return true;
     } else if (const Cast *c = e.as<Cast>()) {
@@ -74,6 +75,8 @@ bool is_const(const Expr &e, int64_t value) {
         return (value >= 0) && (i->value == (uint64_t)value);
     } else if (const FloatImm *i = e.as<FloatImm>()) {
         return i->value == value;
+    } else if (const FixedPointImm *i = e.as<FixedPointImm>()) {
+        return i->value == (uint64_t) value;
     } else if (const Cast *c = e.as<Cast>()) {
         return is_const(c->value, value);
     } else if (const Broadcast *b = e.as<Broadcast>()) {
@@ -218,6 +221,7 @@ bool is_zero(const Expr &e) {
     if (const IntImm *int_imm = e.as<IntImm>()) return int_imm->value == 0;
     if (const UIntImm *uint_imm = e.as<UIntImm>()) return uint_imm->value == 0;
     if (const FloatImm *float_imm = e.as<FloatImm>()) return float_imm->value == 0.0;
+    if (const FixedPointImm *fixed_imm = e.as<FixedPointImm>()) return fixed_imm->value == 0;
     if (const Cast *c = e.as<Cast>()) return is_zero(c->value);
     if (const Broadcast *b = e.as<Broadcast>()) return is_zero(b->value);
     if (const Call *c = e.as<Call>()) {
@@ -231,6 +235,7 @@ bool is_one(const Expr &e) {
     if (const IntImm *int_imm = e.as<IntImm>()) return int_imm->value == 1;
     if (const UIntImm *uint_imm = e.as<UIntImm>()) return uint_imm->value == 1;
     if (const FloatImm *float_imm = e.as<FloatImm>()) return float_imm->value == 1.0;
+    if (const FixedPointImm *fixed_imm = e.as<FixedPointImm>()) return fixed_imm->is_int(1);
     if (const Cast *c = e.as<Cast>()) return is_one(c->value);
     if (const Broadcast *b = e.as<Broadcast>()) return is_one(b->value);
     if (const Call *c = e.as<Call>()) {
@@ -245,6 +250,7 @@ bool is_two(const Expr &e) {
     if (const IntImm *int_imm = e.as<IntImm>()) return int_imm->value == 2;
     if (const UIntImm *uint_imm = e.as<UIntImm>()) return uint_imm->value == 2;
     if (const FloatImm *float_imm = e.as<FloatImm>()) return float_imm->value == 2.0;
+    if (const FixedPointImm *fixed_imm = e.as<FixedPointImm>()) return fixed_imm->is_int(2);
     if (const Cast *c = e.as<Cast>()) return is_two(c->value);
     if (const Broadcast *b = e.as<Broadcast>()) return is_two(b->value);
     return false;
@@ -261,6 +267,8 @@ Expr make_const_helper(Type t, T val) {
         return UIntImm::make(t, (uint64_t)val);
     } else if (t.is_float()) {
         return FloatImm::make(t, (double)val);
+    } else if (t.is_fixed_point() || t.is_ufixed_point()) {
+        return FixedPointImm::make(t, val, t.is_fixed_point()); // FIx this
     } else {
         internal_error << "Can't make a constant of type " << t << "\n";
         return Expr();
@@ -269,15 +277,30 @@ Expr make_const_helper(Type t, T val) {
 }
 
 Expr make_const(Type t, int64_t val) {
-    return make_const_helper(t, val);
+    // if (t.is_fixed_point()) {
+    //     Internal::debug(3) << "Test 1a " << val << "\n";
+    //     return IntImm::make(Int(32), val);
+    // } else {
+        return make_const_helper(t, val);
+    // }
 }
 
 Expr make_const(Type t, uint64_t val) {
-    return make_const_helper(t, val);
+    // if (t.is_fixed_point()) {
+    //     Internal::debug(3) << "Test 1b " << val << "\n";
+    //     return UIntImm::make(UInt(32), val);
+    // } else {
+        return make_const_helper(t, val);
+    // }
 }
 
 Expr make_const(Type t, double val) {
-    return make_const_helper(t, val);
+    // if (t.is_fixed_point()) {
+    //     Internal::debug(3) << "Test 1c " << val << "\n";
+    //     return FloatImm::make(Float(64), val);
+    // } else {
+        return make_const_helper(t, val);
+    // }
 }
 
 
@@ -376,7 +399,46 @@ void check_representable(Type dst, int64_t x) {
     }
 }
 
+void match_fixed_point_types(Expr &a, Expr &b) {
+
+    Type ta = a.type(), tb = b.type();
+
+    bool is_a_fixed_or_ufixed = ta.is_fixed_point() || ta.is_ufixed_point();
+    bool is_b_fixed_or_ufixed = tb.is_fixed_point() || tb.is_ufixed_point();
+
+    // Add Fixed-point case
+    if (is_a_fixed_or_ufixed && tb.is_float()) {
+        // Convert to float
+        a = cast(tb, a);
+    } else if (ta.is_float() && is_b_fixed_or_ufixed) {
+        // Convert to float
+        b = cast(ta, b);
+    } else if (is_a_fixed_or_ufixed && (tb.is_uint() || tb.is_int())) {
+        // Convert b to fixed_point
+        if (tb.is_uint()) {
+            b = cast(UFixedPoint(tb.bits(), tb.bits()), b);
+        } else {
+            b = cast(FixedPoint(tb.bits(), tb.bits()), b);
+        }
+    } else if ((ta.is_uint() || ta.is_int()) && is_b_fixed_or_ufixed) {
+        // Convert a to fixed point
+        if (ta.is_uint()) {
+            a = cast(UFixedPoint(ta.bits(), ta.bits()), a);
+        } else {
+            a = cast(FixedPoint(ta.bits(), ta.bits()), a);
+        }
+    } else if (is_a_fixed_or_ufixed && is_b_fixed_or_ufixed) {
+        // do nothing
+    } else {
+        internal_error << "Could not match types: " << ta << ", " << tb << "\n";
+    }
+}
+
 void match_types(Expr &a, Expr &b) {
+    if (a.type().is_fixed_ufixed_point() || b.type().is_fixed_ufixed_point()) {
+        match_fixed_point_types(a, b);
+        return;
+    }
     if (a.type() == b.type()) return;
 
     user_assert(!a.type().is_handle() && !b.type().is_handle())

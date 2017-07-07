@@ -136,7 +136,12 @@ private:
         Interval a = interval;
 
         if (a.is_single_point(op->value)) {
-            interval = Interval::single_point(op);
+            if (op->type.is_fixed_ufixed_point()) {
+                // If it is casted to fixed-point, take the value.
+                interval = Interval::single_point(op->value);
+            } else {
+                interval = Interval::single_point(op);
+            }
             return;
         }
 

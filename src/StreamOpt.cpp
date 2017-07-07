@@ -634,11 +634,11 @@ class ReplaceReferencesWithStencil : public IRMutator {
                 debug(3) << "   old_arg " << old_arg << "\n";
                 debug(3) << "   offset " << offset << "\n";
                 debug(3) << "   expand_expr " << expand_expr(new_arg, scope) << "\n";
-                debug(3) << "   expand_div " << expand_div_expr(expand_expr(new_arg, scope)) << "\n";
+                debug(3) << "   expand_div " << expand_mul_expr(expand_div_expr(expand_expr(new_arg, scope))) << "\n";
                 debug(3) << "   simplify_expand_div " << simplify(simplify_mod(expand_div_expr(expand_expr(new_arg, scope)),2, kernel.name, scope, expand_expr(offset, scope))) << "\n";
                 debug(3) << "   change_offset " << change_offset(simplify(simplify_mod(expand_div_expr(expand_expr(new_arg, scope)),2, kernel.name, scope, expand_expr(offset, scope))), expand_expr(offset, scope)) << "\n";
                 debug(3) << "   simplify change_offset " << simplify(change_offset(simplify(simplify_mod(expand_div_expr(expand_expr(new_arg, scope)),2, kernel.name, scope, expand_expr(offset, scope))), expand_expr(offset, scope))) << "\n";
-                new_arg = simplify(change_offset(simplify(simplify_mod(expand_div_expr(expand_expr(new_arg, scope)),2, kernel.name, scope, expand_expr(offset, scope))), expand_expr(offset, scope)));
+                new_arg = simplify(change_offset(simplify(simplify_mod(expand_mul_expr(expand_div_expr(expand_expr(new_arg, scope))),2, kernel.name, scope, expand_expr(offset, scope))), expand_expr(offset, scope)));
                 //new_arg = simplify(expand_div_expr(expand_expr(new_arg, scope)));
                 //debug(3) << "   simplify_mod new_arg " << simplify_mod(new_arg, kernel.dims[i].step) << " with step: " << kernel.dims[i].step << "\n\n";
                 debug(3) << "   simplified new_arg " << new_arg << "\n\n";
@@ -746,13 +746,18 @@ Stmt create_dispatch_call(const HWKernel& kernel, int min_fifo_depth = 0) {
 
         Expr store_extent;
         //if (kernel.dims[i].up_step != 0) {
+        if (is_const(kernel.dims[i].store_bound.max)) {
+            store_extent = simplify(kernel.dims[i].store_bound.max -
+                                     kernel.dims[i].store_bound.min + 1);
+        } else {
             Expr temp = up_step_difference(kernel.dims[i].store_bound.max); 
-            debug(3) << "Temp " << up_step_difference(kernel.dims[i].store_bound.max) << "\n";
+            debug(3) << "Up step of " << kernel.dims[i].store_bound.max << " with " << up_step_difference(kernel.dims[i].store_bound.max) << "\n";
             store_extent = simplify(expand_mul_expr(temp) -
                                      expand_mul_expr(kernel.dims[i].store_bound.min));
             if (is_zero(store_extent)) {
                 store_extent = make_one(Int(32));
             }
+        }
         //} else {
         //    store_extent = simplify(kernel.dims[i].store_bound.max -
         //                             kernel.dims[i].store_bound.min + 1);
@@ -785,6 +790,10 @@ Stmt create_dispatch_call(const HWKernel& kernel, int min_fifo_depth = 0) {
 
             Expr store_extent;
             //if (kernel.dims[i].up_step != 0) {
+            if (is_const(p.second[i].store_bound.max)) {
+                store_extent = simplify(p.second[i].store_bound.max -
+                                         p.second[i].store_bound.min + 1);
+            } else {
                 Expr temp = up_step_difference(p.second[i].store_bound.max); 
                 debug(3) << "Temp " << up_step_difference(p.second[i].store_bound.max) << "\n";
                 store_extent = simplify(expand_mul_expr(temp) -
@@ -792,6 +801,7 @@ Stmt create_dispatch_call(const HWKernel& kernel, int min_fifo_depth = 0) {
                 if (is_zero(store_extent)) {
                     store_extent = make_one(Int(32));
                 }
+            }
             //} else {
             //    store_extent = simplify(p.second[i].store_bound.max -
             //                             p.second[i].store_bound.min + 1);

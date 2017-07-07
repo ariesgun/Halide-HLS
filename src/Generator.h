@@ -1390,6 +1390,10 @@ public:
         return this->funcs().at(0)(args);
     }
 
+    Func& cast_to(Type t) {
+        return this->funcs_.at(0).cast_to(t);
+    }
+
     template<typename T2>
     operator StubInputBuffer<T2>() const {
         return StubInputBuffer<T2>(parameter());
@@ -2767,6 +2771,12 @@ private:
     template<typename T2>
     struct has_schedule_method<T2, typename type_sink<decltype(std::declval<T2>().schedule())>::type> : std::true_type {};
 
+    template<typename T2, typename = void>
+    struct has_data_scheduling_method : std::false_type {};
+
+    template<typename T2>
+    struct has_data_scheduling_method<T2, typename type_sink<decltype(std::declval<T2>().type_schedule())>::type> : std::true_type {};
+
     template <typename T2 = T,
               typename std::enable_if<!has_generate_method<T2>::value>::type * = nullptr>
     Pipeline build_pipeline_impl() {
@@ -2776,6 +2786,7 @@ private:
         post_build();
         return p;
     }
+
     template <typename T2 = T,
               typename std::enable_if<has_generate_method<T2>::value>::type * = nullptr>
     Pipeline build_pipeline_impl() {
@@ -2794,7 +2805,20 @@ private:
     }
 
     template <typename T2 = T,
-              typename std::enable_if<has_generate_method<T2>::value>::type * = nullptr>
+              typename std::enable_if<has_generate_method<T2>::value>::type * = nullptr,
+              typename std::enable_if<has_data_scheduling_method<T2>::value>::type * = nullptr>
+    void call_generate_impl() {
+        T *t = (T*)this;
+        static_assert(std::is_void<decltype(t->generate())>::value, "generate() must return void");
+        pre_generate();
+        t->type_schedule();
+        t->generate();
+        post_generate();
+    }
+
+    template <typename T2 = T,
+              typename std::enable_if<has_generate_method<T2>::value>::type * = nullptr,
+              typename std::enable_if<!has_data_scheduling_method<T2>::value>::type * = nullptr>
     void call_generate_impl() {
         T *t = (T*)this;
         static_assert(std::is_void<decltype(t->generate())>::value, "generate() must return void");

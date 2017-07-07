@@ -38,9 +38,13 @@ protected:
     virtual std::string print_stencil_type(Stencil_Type s);
     virtual std::string print_name(const std::string &name);
     virtual std::string print_stencil_pragma(const std::string &name);
+    virtual std::string print_additional_stencil_type(Stencil_Type s);
 
     using CodeGen_C::visit;
 
+    std::string print_type(Type type, AppendSpaceIfNeeded space_option = DoNotAppendSpace);
+
+    void visit(const FixedPointImm *);
     void visit(const Call *);
     void visit(const Provide *);
     void visit(const Realize *);

@@ -149,6 +149,23 @@ public:
     /** Get the types of the outputs. */
     EXPORT const std::vector<Type> &output_types() const;
 
+    /** Set the outputs type. */
+    EXPORT void set_output_types(int i, Type t) const;
+
+    EXPORT bool is_type_casted() const;
+    EXPORT void set_is_type_casted(bool val) const;
+
+    EXPORT Type get_casted_output_type() const;
+    EXPORT void set_casted_output_type(Type t) const;
+
+    EXPORT void insert_expr_cast_ref(std::pair<Expr&, Type> ref) const;
+    EXPORT const std::pair<Expr&, Type> get_expr_cast_ref(int idx) const;
+    EXPORT size_t get_expr_cast_ref_size() const;
+
+    EXPORT void insert_args_expr_cast_ref(std::pair<Expr&, Type> ref) const;
+    EXPORT const std::pair<Expr&, Type> get_args_expr_cast_ref(int idx) const;
+    EXPORT size_t get_args_expr_cast_ref_size() const;
+
     /** Get the right-hand-side of the pure definition. */
     EXPORT const std::vector<Expr> &values() const;
 

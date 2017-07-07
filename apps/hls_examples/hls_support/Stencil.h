@@ -11,6 +11,9 @@ template <typename T, size_t EXTENT_0, size_t EXTENT_1, size_t EXTENT_2, size_t 
 template <typename T, size_t EXTENT_0, size_t EXTENT_1, size_t EXTENT_2, size_t EXTENT_3> struct PackedStencil;
 template <typename T, size_t EXTENT_0, size_t EXTENT_1, size_t EXTENT_2, size_t EXTENT_3> struct AxiPackedStencil;
 
+template <typename T, size_t T_W, size_t I_W, size_t EXTENT_0, size_t EXTENT_1, size_t EXTENT_2, size_t EXTENT_3> struct StencilFixed;
+template <typename T, size_t T_W, size_t I_W, size_t EXTENT_0, size_t EXTENT_1, size_t EXTENT_2, size_t EXTENT_3> struct PackedStencilFixed;
+template <typename T, size_t T_W, size_t I_W, size_t EXTENT_0, size_t EXTENT_1, size_t EXTENT_2, size_t EXTENT_3> struct AxiPackedStencilFixed;
 
 #ifndef AP_INT_MAX_W
 //#define AP_INT_MAX_W 32768
@@ -208,6 +211,147 @@ public:
     }
 };
 
+/** Packed Stencil struct for fixed-point data type 
+*/
+template <typename T, size_t T_W, size_t I_W, size_t EXTENT_0, size_t EXTENT_1 = 1, size_t EXTENT_2 = 1, size_t EXTENT_3 = 1>
+struct PackedStencilFixed {
+    ap_uint<T_W*EXTENT_3*EXTENT_2*EXTENT_1*EXTENT_0> value;
+
+    /** writer
+     */
+    inline ap_range_ref<T_W*EXTENT_3*EXTENT_2*EXTENT_1*EXTENT_0, false>
+    operator()(size_t index_0, size_t index_1 = 0, size_t index_2 = 0, size_t index_3 = 0) {
+#pragma HLS INLINE
+        assert(index_0 < EXTENT_0 && index_1 < EXTENT_1 && index_2 < EXTENT_2 && index_3 < EXTENT_3);
+        const size_t word_length = T_W; // in bits
+        const size_t lo = index_0 * word_length +
+                          index_1 * EXTENT_0 * word_length +
+                          index_2 * EXTENT_0 * EXTENT_1 * word_length +
+                          index_3 * EXTENT_0 * EXTENT_1 * EXTENT_2 * word_length;
+        const size_t hi = lo + word_length - 1;
+        return value.range(hi, lo);
+    }
+
+    /** reader
+     */
+    inline ap_range_ref<T_W*EXTENT_3*EXTENT_2*EXTENT_1*EXTENT_0, false>
+    operator()(size_t index_0, size_t index_1 = 0, size_t index_2 = 0, size_t index_3 = 0) const {
+#pragma HLS INLINE
+        assert(index_0 < EXTENT_0 && index_1 < EXTENT_1 && index_2 < EXTENT_2 && index_3 < EXTENT_3);
+        const size_t word_length = T_W; // in bits
+        const size_t lo = index_0 * word_length +
+                          index_1 * EXTENT_0 * word_length +
+                          index_2 * EXTENT_0 * EXTENT_1 * word_length +
+                          index_3 * EXTENT_0 * EXTENT_1 * EXTENT_2 * word_length;
+        const size_t hi = lo + word_length - 1;
+        return value.range(hi, lo);
+    }
+
+    // convert to StencilFixed
+    operator StencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3>() {
+#pragma HLS INLINE
+        StencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> res;
+#pragma HLS ARRAY_PARTITION variable=res.value complete dim=0
+
+        for(size_t idx_3 = 0; idx_3 < EXTENT_3; idx_3++)
+#pragma HLS UNROLL
+        for(size_t idx_2 = 0; idx_2 < EXTENT_2; idx_2++)
+#pragma HLS UNROLL
+        for(size_t idx_1 = 0; idx_1 < EXTENT_1; idx_1++)
+#pragma HLS UNROLL
+        for(size_t idx_0 = 0; idx_0 < EXTENT_0; idx_0++) {
+#pragma HLS UNROLL
+            ap_uint<T_W> temp = operator()(idx_0, idx_1, idx_2, idx_3);
+            (res.value[idx_3][idx_2][idx_1][idx_0])(T_W-1, 0) = temp(T_W-1, 0);
+        }
+        return res;
+    }
+
+    // convert to AxiPackedStencilFixed
+    operator AxiPackedStencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3>() {
+#pragma HLS INLINE
+        AxiPackedStencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> res;
+        res.value = value;
+        return res;
+    }
+
+};
+
+/** multi-dimension (up-to 4 dimensions) axi stencil struct for fixed-point data type
+ */
+template <typename T, size_t T_W, size_t I_W, size_t EXTENT_0, size_t EXTENT_1 = 1, size_t EXTENT_2 = 1, size_t EXTENT_3 = 1>
+struct AxiPackedStencilFixed {
+    ap_uint<T_W*EXTENT_3*EXTENT_2*EXTENT_1*EXTENT_0> value;
+    ap_uint<1> last;
+
+    // convert to PackedStencilFixed
+    operator PackedStencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3>() {
+#pragma HLS INLINE
+        PackedStencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> res;
+        res.value = value;
+        return res;
+    }
+
+    // convert to StencilFixed
+    operator StencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3>() {
+#pragma HLS INLINE
+        PackedStencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> res = *this;
+        return (StencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3>)res;
+    }
+};
+
+/** multi-dimension (up-to 4 dimensions) stencil struct for fixed-point data type
+ */
+template <typename T, size_t T_W, size_t I_W, size_t EXTENT_0, size_t EXTENT_1 = 1, size_t EXTENT_2 = 1, size_t EXTENT_3 = 1>
+struct StencilFixed {
+public:
+    T value[EXTENT_3][EXTENT_2][EXTENT_1][EXTENT_0];
+
+    /** writer
+     */
+    inline T& operator()(size_t index_0, size_t index_1 = 0, size_t index_2 = 0, size_t index_3 = 0) {
+#pragma HLS INLINE
+        assert(index_0 < EXTENT_0 && index_1 < EXTENT_1 && index_2 < EXTENT_2 && index_3 < EXTENT_3);
+        return value[index_3][index_2][index_1][index_0];
+    }
+
+    /** reader
+     */
+    inline const T& operator()(size_t index_0, size_t index_1 = 0, size_t index_2 = 0, size_t index_3 = 0) const {
+#pragma HLS INLINE
+        assert(index_0 < EXTENT_0 && index_1 < EXTENT_1 && index_2 < EXTENT_2 && index_3 < EXTENT_3);
+        return value[index_3][index_2][index_1][index_0];
+    }
+
+    // convert to PackedStencilFixed
+    operator PackedStencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3>() {
+#pragma HLS INLINE
+        PackedStencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> res;
+        const size_t word_length = T_W; // in bits
+
+        for(size_t idx_3 = 0; idx_3 < EXTENT_3; idx_3++)
+#pragma HLS UNROLL
+        for(size_t idx_2 = 0; idx_2 < EXTENT_2; idx_2++)
+#pragma HLS UNROLL
+        for(size_t idx_1 = 0; idx_1 < EXTENT_1; idx_1++)
+#pragma HLS UNROLL
+        for(size_t idx_0 = 0; idx_0 < EXTENT_0; idx_0++) {
+#pragma HLS UNROLL
+            ap_uint<word_length> temp = (value[idx_3][idx_2][idx_1][idx_0]).range();
+            res(idx_0, idx_1, idx_2, idx_3) = temp;
+        }
+        return res;
+    }
+
+    // convert to AxiPackedStencilFixed
+    operator AxiPackedStencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3>() {
+#pragma HLS INLINE
+        PackedStencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> res = *this;
+        return (AxiPackedStencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3>)res;
+    }
+};
+
+
 #ifndef HALIDE_ATTRIBUTE_ALIGN
   #ifdef _MSC_VER
     #define HALIDE_ATTRIBUTE_ALIGN(x) __declspec(align(x))
@@ -323,8 +467,6 @@ void subimage_to_stream(const struct halide_buffer_t *buf_noop,
     assert(subimage_extent_2 % EXTENT_2 == 0);
     assert(subimage_extent_3 % EXTENT_3 == 0);
     (void) buf_noop;  // avoid unused warnning
-    printf("stride_0 : %d %d\n", stride_0, subimage_extent_0);
-    printf("stride_1 : %d %d\n", stride_1, subimage_extent_1);
     for(size_t idx_3 = 0; idx_3 < (unsigned)subimage_extent_3; idx_3 += EXTENT_3)
     for(size_t idx_2 = 0; idx_2 < (unsigned)subimage_extent_2; idx_2 += EXTENT_2)
     for(size_t idx_1 = 0; idx_1 < (unsigned)subimage_extent_1; idx_1 += EXTENT_1) {
@@ -339,11 +481,9 @@ void subimage_to_stream(const struct halide_buffer_t *buf_noop,
                 (idx_2 + st_idx_2) * stride_2 +
                 (idx_3 + st_idx_3) * stride_3;
             stencil(st_idx_0, st_idx_1, st_idx_2, st_idx_3) = *((T *)subimage + offset);
-            //printf("%d ", stencil(st_idx_0, st_idx_1, st_idx_2, st_idx_3));
         }
         stream.write(stencil);
     }
-    //printf("\n");
     }
 }
 
@@ -413,18 +553,170 @@ void stream_to_subimage(const struct halide_buffer_t *buf_noop,
         AxiPackedStencil<T, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> axi_stencil = stream.read();
         Stencil<T, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> stencil = axi_stencil;
 
-        /*
-        printf("Repeat edge Information %ld %ld\n", idx_0, idx_1);
-       printf(" %d %d %d %d %d %d %d %d \n", stencil(0,0), stencil(1,0), stencil(2,0), stencil(3,0), stencil(4,0), stencil(5,0), stencil(6,0), stencil(7,0));
-       printf(" %d %d %d %d %d %d %d %d \n", stencil(0,1), stencil(1,1), stencil(2,1), stencil(3,1), stencil(4,1), stencil(5,1), stencil(6,1), stencil(7,1));
-       printf(" %d %d %d %d %d %d %d %d \n", stencil(0,2), stencil(1,2), stencil(2,2), stencil(3,2), stencil(4,2), stencil(5,2), stencil(6,2), stencil(7,2));
-       printf(" %d %d %d %d %d %d %d %d \n", stencil(0,3), stencil(1,3), stencil(2,3), stencil(3,3), stencil(4,3), stencil(5,3), stencil(6,3), stencil(7,3));
-       printf(" %d %d %d %d %d %d %d %d \n", stencil(0,4), stencil(1,4), stencil(2,4), stencil(3,4), stencil(4,4), stencil(5,4), stencil(6,4), stencil(7,4));
-       printf(" %d %d %d %d %d %d %d %d \n", stencil(0,5), stencil(1,5), stencil(2,5), stencil(3,5), stencil(4,5), stencil(5,5), stencil(6,5), stencil(7,5));
-       printf(" %d %d %d %d %d %d %d %d \n", stencil(0,6), stencil(1,6), stencil(2,6), stencil(3,6), stencil(4,6), stencil(5,6), stencil(6,6), stencil(7,6));
-       printf(" %d %d %d %d %d %d %d %d \n", stencil(0,7), stencil(1,7), stencil(2,7), stencil(3,7), stencil(4,7), stencil(5,7), stencil(6,7), stencil(7,7));
-       printf("\n");
-    */
+        for(size_t st_idx_3 = 0; st_idx_3 < EXTENT_3; st_idx_3++)
+        for(size_t st_idx_2 = 0; st_idx_2 < EXTENT_2; st_idx_2++)
+        for(size_t st_idx_1 = 0; st_idx_1 < EXTENT_1; st_idx_1++)
+        for(size_t st_idx_0 = 0; st_idx_0 < EXTENT_0; st_idx_0++) {
+            int offset = (idx_0 + st_idx_0) * stride_0 +
+                (idx_1 + st_idx_1) * stride_1 +
+                (idx_2 + st_idx_2) * stride_2 +
+                (idx_3 + st_idx_3) * stride_3;
+            *((T *)subimage + offset) = stencil(st_idx_0, st_idx_1, st_idx_2, st_idx_3);
+        }
+        // check TLAST
+        if (idx_3 == subimage_extent_3 - EXTENT_3 &&
+            idx_2 == subimage_extent_2 - EXTENT_2 &&
+            idx_1 == subimage_extent_1 - EXTENT_1 &&
+            idx_0 == subimage_extent_0 - EXTENT_0) {
+            if(axi_stencil.last != 1) {
+                printf("TLAS check failed.\n");
+            }
+        } else {
+            if(axi_stencil.last != 0) {
+                printf("TLAS check failed.\n");
+            }
+        }
+    }
+}
+
+/* Specific subimage_to_stream for fixed-point data type */
+template <typename T, size_t T_W, size_t I_W, size_t EXTENT_0, size_t EXTENT_1, size_t EXTENT_2, size_t EXTENT_3>
+void subimage_to_stream_fixed(const struct buffer_t *buf_noop,
+                        hls::stream<AxiPackedStencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> > &stream,
+                        void *subimage,
+                        int stride_0, int subimage_extent_0,
+                        int stride_1 = 1, int subimage_extent_1 = 1,
+                        int stride_2 = 1, int subimage_extent_2 = 1,
+                        int stride_3 = 1, int subimage_extent_3 = 1) {
+
+    assert(subimage_extent_0 % EXTENT_0 == 0);
+    assert(subimage_extent_1 % EXTENT_1 == 0);
+    assert(subimage_extent_2 % EXTENT_2 == 0);
+    assert(subimage_extent_3 % EXTENT_3 == 0);
+    (void) buf_noop;  // avoid unused warnning
+    for(size_t idx_3 = 0; idx_3 < (unsigned)subimage_extent_3; idx_3 += EXTENT_3)
+    for(size_t idx_2 = 0; idx_2 < (unsigned)subimage_extent_2; idx_2 += EXTENT_2)
+    for(size_t idx_1 = 0; idx_1 < (unsigned)subimage_extent_1; idx_1 += EXTENT_1) {
+    for(size_t idx_0 = 0; idx_0 < (unsigned)subimage_extent_0; idx_0 += EXTENT_0) {
+        StencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> stencil;
+        for(size_t st_idx_3 = 0; st_idx_3 < EXTENT_3; st_idx_3++)
+        for(size_t st_idx_2 = 0; st_idx_2 < EXTENT_2; st_idx_2++)
+        for(size_t st_idx_1 = 0; st_idx_1 < EXTENT_1; st_idx_1++)
+        for(size_t st_idx_0 = 0; st_idx_0 < EXTENT_0; st_idx_0++) {
+            int offset = (idx_0 + st_idx_0) * stride_0 +
+                (idx_1 + st_idx_1) * stride_1 +
+                (idx_2 + st_idx_2) * stride_2 +
+                (idx_3 + st_idx_3) * stride_3;
+            stencil(st_idx_0, st_idx_1, st_idx_2, st_idx_3) = *((T *)subimage + offset);
+        }
+        stream.write(stencil);
+    }
+    }
+}
+
+/* Specific subimage_to_stream for fixed-point data type */
+template <typename T, size_t T_W, size_t I_W, size_t EXTENT_0, size_t EXTENT_1, size_t EXTENT_2, size_t EXTENT_3>
+void subimage_to_stream_fixed(const struct halide_buffer_t *buf_noop,
+                        hls::stream<AxiPackedStencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> > &stream,
+                        void *subimage,
+                        int stride_0, int subimage_extent_0,
+                        int stride_1 = 1, int subimage_extent_1 = 1,
+                        int stride_2 = 1, int subimage_extent_2 = 1,
+                        int stride_3 = 1, int subimage_extent_3 = 1) {
+
+    assert(subimage_extent_0 % EXTENT_0 == 0);
+    assert(subimage_extent_1 % EXTENT_1 == 0);
+    assert(subimage_extent_2 % EXTENT_2 == 0);
+    assert(subimage_extent_3 % EXTENT_3 == 0);
+    (void) buf_noop;  // avoid unused warnning
+    for(size_t idx_3 = 0; idx_3 < (unsigned)subimage_extent_3; idx_3 += EXTENT_3)
+    for(size_t idx_2 = 0; idx_2 < (unsigned)subimage_extent_2; idx_2 += EXTENT_2)
+    for(size_t idx_1 = 0; idx_1 < (unsigned)subimage_extent_1; idx_1 += EXTENT_1) {
+    for(size_t idx_0 = 0; idx_0 < (unsigned)subimage_extent_0; idx_0 += EXTENT_0) {
+        StencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> stencil;
+        for(size_t st_idx_3 = 0; st_idx_3 < EXTENT_3; st_idx_3++)
+        for(size_t st_idx_2 = 0; st_idx_2 < EXTENT_2; st_idx_2++)
+        for(size_t st_idx_1 = 0; st_idx_1 < EXTENT_1; st_idx_1++)
+        for(size_t st_idx_0 = 0; st_idx_0 < EXTENT_0; st_idx_0++) {
+            int offset = (idx_0 + st_idx_0) * stride_0 +
+                (idx_1 + st_idx_1) * stride_1 +
+                (idx_2 + st_idx_2) * stride_2 +
+                (idx_3 + st_idx_3) * stride_3;
+            stencil(st_idx_0, st_idx_1, st_idx_2, st_idx_3) = *((T *)subimage + offset);
+        }
+        stream.write(stencil);
+    }
+    }
+}
+
+/* specific stream_to_subimage for fixed-point data type */
+template <typename T, size_t T_W, size_t I_W, size_t EXTENT_0, size_t EXTENT_1, size_t EXTENT_2, size_t EXTENT_3>
+void stream_to_subimage_fixed(const struct buffer_t *buf_noop,
+                        hls::stream<AxiPackedStencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> > &stream,
+                        void *subimage,
+                        int stride_0, int subimage_extent_0,
+                        int stride_1 = 1, int subimage_extent_1 = 1,
+                        int stride_2 = 1, int subimage_extent_2 = 1,
+                        int stride_3 = 1, int subimage_extent_3 = 1) {
+    assert(subimage_extent_0 % EXTENT_0 == 0);
+    assert(subimage_extent_1 % EXTENT_1 == 0);
+    assert(subimage_extent_2 % EXTENT_2 == 0);
+    assert(subimage_extent_3 % EXTENT_3 == 0);
+    (void) buf_noop;  // avoid unused warnning
+    for(size_t idx_3 = 0; idx_3 < (unsigned)subimage_extent_3; idx_3 += EXTENT_3)
+    for(size_t idx_2 = 0; idx_2 < (unsigned)subimage_extent_2; idx_2 += EXTENT_2)
+    for(size_t idx_1 = 0; idx_1 < (unsigned)subimage_extent_1; idx_1 += EXTENT_1)
+    for(size_t idx_0 = 0; idx_0 < (unsigned)subimage_extent_0; idx_0 += EXTENT_0) {
+        AxiPackedStencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> axi_stencil = stream.read();
+        StencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> stencil = axi_stencil;
+
+        for(size_t st_idx_3 = 0; st_idx_3 < EXTENT_3; st_idx_3++)
+        for(size_t st_idx_2 = 0; st_idx_2 < EXTENT_2; st_idx_2++)
+        for(size_t st_idx_1 = 0; st_idx_1 < EXTENT_1; st_idx_1++)
+        for(size_t st_idx_0 = 0; st_idx_0 < EXTENT_0; st_idx_0++) {
+            int offset = (idx_0 + st_idx_0) * stride_0 +
+                (idx_1 + st_idx_1) * stride_1 +
+                (idx_2 + st_idx_2) * stride_2 +
+                (idx_3 + st_idx_3) * stride_3;
+            *((T *)subimage + offset) = stencil(st_idx_0, st_idx_1, st_idx_2, st_idx_3);
+        }
+        // check TLAST
+        if (idx_3 == subimage_extent_3 - EXTENT_3 &&
+            idx_2 == subimage_extent_2 - EXTENT_2 &&
+            idx_1 == subimage_extent_1 - EXTENT_1 &&
+            idx_0 == subimage_extent_0 - EXTENT_0) {
+            if(axi_stencil.last != 1) {
+                printf("TLAS check failed.\n");
+            }
+        } else {
+            if(axi_stencil.last != 0) {
+                printf("TLAS check failed.\n");
+            }
+        }
+    }
+}
+
+/* Specific for fixed-point data type */
+template <typename T, size_t T_W, size_t I_W, size_t EXTENT_0, size_t EXTENT_1, size_t EXTENT_2, size_t EXTENT_3>
+void stream_to_subimage_fixed(const struct halide_buffer_t *buf_noop,
+                        hls::stream<AxiPackedStencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> > &stream,
+                        void *subimage,
+                        int stride_0, int subimage_extent_0,
+                        int stride_1 = 1, int subimage_extent_1 = 1,
+                        int stride_2 = 1, int subimage_extent_2 = 1,
+                        int stride_3 = 1, int subimage_extent_3 = 1) {
+    assert(subimage_extent_0 % EXTENT_0 == 0);
+    assert(subimage_extent_1 % EXTENT_1 == 0);
+    assert(subimage_extent_2 % EXTENT_2 == 0);
+    assert(subimage_extent_3 % EXTENT_3 == 0);
+    (void) buf_noop;  // avoid unused warnning
+    for(size_t idx_3 = 0; idx_3 < (unsigned)subimage_extent_3; idx_3 += EXTENT_3)
+    for(size_t idx_2 = 0; idx_2 < (unsigned)subimage_extent_2; idx_2 += EXTENT_2)
+    for(size_t idx_1 = 0; idx_1 < (unsigned)subimage_extent_1; idx_1 += EXTENT_1)
+    for(size_t idx_0 = 0; idx_0 < (unsigned)subimage_extent_0; idx_0 += EXTENT_0) {
+        AxiPackedStencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> axi_stencil = stream.read();
+        StencilFixed<T, T_W, I_W, EXTENT_0, EXTENT_1, EXTENT_2, EXTENT_3> stencil = axi_stencil;
+
         for(size_t st_idx_3 = 0; st_idx_3 < EXTENT_3; st_idx_3++)
         for(size_t st_idx_2 = 0; st_idx_2 < EXTENT_2; st_idx_2++)
         for(size_t st_idx_1 = 0; st_idx_1 < EXTENT_1; st_idx_1++)

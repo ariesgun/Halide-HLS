@@ -155,6 +155,12 @@ private:
         stream << close_span();
     }
 
+    void visit(const FixedPointImm *op){
+        stream << open_span("FixedPointImm Imm");
+        stream << Expr(op);
+        stream << close_span();
+    }
+
     void visit(const DivImm *op){
         stream << open_span("DivImm Imm");
         stream << Expr(op);
@@ -677,6 +683,7 @@ span.Type { color: #445588; font-weight: bold; }\n \
 span.StringImm { color: #d14; }\n \
 span.IntImm { color: #099; }\n \
 span.FloatImm { color: #099; }\n \
+span.FixedPointImm { color: #099; }\n \
 b.Highlight { font-weight: bold; background-color: #DDD; }\n \
 span.Highlight { font-weight: bold; background-color: #FF0; }\n \
 ";

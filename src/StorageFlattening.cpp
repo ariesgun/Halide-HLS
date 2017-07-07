@@ -334,7 +334,11 @@ class PromoteToMemoryType : public IRMutator {
     using IRMutator::visit;
 
     Type upgrade(Type t) {
-        return t.with_bits(((t.bits() + 7)/8)*8);
+        if (!t.is_fixed_point() && !t.is_ufixed_point()) { 
+            return t.with_bits(((t.bits() + 7)/8)*8);
+        } else {
+            return t;
+        }
     }
 
     void visit(const Call *op) {

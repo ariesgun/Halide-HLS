@@ -120,14 +120,33 @@ void CodeGen_HLS_Testbench::visit(const Call *op) {
         //   stream_subimage(direction, buffer_var, stream_var, address_of_subimage_origin,
         //                   dim_0_stride, dim_0_extent, ...)
         internal_assert(op->args.size() >= 6 && op->args.size() <= 12);
+
+        // Get stream_var info
+        const Variable *stream_var = op->args[2].as<Variable>();
+        bool is_fixed = false; Type t;
+        if (stream_var) {
+            internal_assert(stencils.contains(stream_var->name));
+            Stencil_Type stream_type = stencils.get(stream_var->name);
+            t = stream_type.elemType;
+            is_fixed = t.is_fixed_point() ? true : false;
+        }
+
         const StringImm *direction = op->args[0].as<StringImm>();
         string a1 = print_expr(op->args[1]);
         string a2 = print_expr(op->args[2]);
         string a3 = print_expr(op->args[3]);
         if (direction->value == "buffer_to_stream") {
-            rhs << "subimage_to_stream(";
+            if (is_fixed) {
+                rhs << "subimage_to_stream_fixed<" << print_type(t) << "," << t.bits() << "," << t.int_bits() << ">(";
+            } else {
+                rhs << "subimage_to_stream(";
+            }
         } else if (direction->value == "stream_to_buffer") {
-            rhs << "stream_to_subimage(";
+            if (is_fixed) {
+                rhs << "stream_to_subimage_fixed<" << print_type(t) << "," << t.bits() << "," << t.int_bits() << ">(";
+            } else {
+                rhs << "stream_to_subimage(";
+            }
         } else {
             internal_error;
         }

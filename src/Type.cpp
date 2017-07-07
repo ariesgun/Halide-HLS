@@ -110,6 +110,8 @@ bool Type::can_represent(Type other) const {
         return ((other.is_float() && other.bits() <= bits()) ||
                 (bits() == 64 && other.bits() <= 32) ||
                 (bits() == 32 && other.bits() <= 16));
+    } else if (is_fixed_point()) {
+        return true; 
     } else {
         return false;
     }
@@ -131,6 +133,10 @@ bool Type::can_represent(int64_t x) const {
         default:
             return false;
         }
+    } else if (is_fixed_point()) {
+        return x >= min_int(int_bits()) && x <= max_int(int_bits());
+    } else if (is_ufixed_point()) {
+        return x >= 0 && (uint64_t)x <= max_uint(int_bits());
     } else {
         return false;
     }
@@ -152,6 +158,10 @@ bool Type::can_represent(uint64_t x) const {
         default:
             return false;
         }
+    } else if (is_fixed_point()) {
+        return x <= (uint64_t)max_int(int_bits());
+    } else if (is_ufixed_point()) {
+        return x <= max_uint(int_bits());
     } else {
         return false;
     }
@@ -175,6 +185,10 @@ bool Type::can_represent(double x) const {
         default:
             return false;
         }
+    } else if (is_fixed_point()) {
+        return bits() > int_bits() && x >= min_int(int_bits()) && (x <= max_int(int_bits()));
+    } else if (is_ufixed_point()) {
+        return bits() > int_bits() && x >= 0 && (x <= max_uint(int_bits()));
     } else {
         return false;
     }

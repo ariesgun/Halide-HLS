@@ -7,6 +7,7 @@
 
 #include <string>
 #include <vector>
+#include <algorithm>
 
 #include "Debug.h"
 #include "Error.h"
@@ -20,6 +21,17 @@
 
 namespace Halide {
 namespace Internal {
+
+inline int get_min_nb_bits(int64_t value) {
+    int bits = 0;
+
+    while(value > 0) {
+        bits++;
+        value >>= 1;
+    }
+
+    return bits;
+}
 
 /** The actual IR nodes begin here. Remember that all the Expr
  * nodes also have a public "type" property */
@@ -39,6 +51,59 @@ struct Add : public ExprNode<Add> {
 
     EXPORT static Expr make(const Expr &a, const Expr &b);
 
+    inline Type match_output_type(const Expr &a, const Expr &b) {
+        Type ta = a.type(), tb = b.type();
+
+        // Add Fixed-point case
+        if (ta.is_fixed_ufixed_point() && tb.is_float()) {
+            // Convert to float
+            return tb;
+        } else if (ta.is_float() && tb.is_fixed_ufixed_point()) {
+            // Convert to float
+            return ta;
+        } else if (ta.is_fixed_point() && (tb.is_uint() || tb.is_int())) {
+            // Convert to fixed_point
+            const IntImm *int_b = b.as<IntImm>();
+            const UIntImm *uint_b = b.as<UIntImm>();
+            int bits_b;
+            if (int_b) {
+                bits_b = get_min_nb_bits(std::abs(int_b->value)+1);
+            } else if (uint_b) {
+                bits_b = get_min_nb_bits(uint_b->value);
+            } else {
+                bits_b = tb.bits();
+            }
+            return FixedPoint(std::max(ta.int_bits(), bits_b) + 1 + std::max(ta.bits() - ta.int_bits(), 0), std::max(ta.int_bits(), bits_b) + 1, std::max(ta.lanes(), tb.lanes()));
+
+            //return FixedPoint(std::max(ta.int_bits(), tb.int_bits()) + 1 + std::max(ta.bits() - ta.int_bits(), tb.bits() - tb.int_bits()), std::max(ta.int_bits(), tb.int_bits()) + 1, std::max(ta.lanes(), tb.lanes()));
+            //out_type = FixedPoint(max(ta.bits(), tb.bits())+1, max(ta.int_bits(), tb.int_bits())+1, max(ta.lanes(), tb.lanes()));
+            //out_type = 
+        } else if ((ta.is_uint() || ta.is_int()) && tb.is_fixed_point()) {
+            // Convert to fixed point
+            //a = cast(FixedPoint(ta.bits(), ta.bits()), a);
+            const IntImm *int_a = a.as<IntImm>();
+            const UIntImm *uint_a = a.as<UIntImm>();
+            int bits_a;
+            if (int_a) {
+                bits_a = get_min_nb_bits(std::abs(int_a->value)+1);
+            } else if (uint_a) {
+                bits_a = get_min_nb_bits(uint_a->value);
+            } else {
+                bits_a = tb.bits();
+            }
+            return FixedPoint(std::max(tb.int_bits(), bits_a) + 1 + std::max(tb.bits() - tb.int_bits(), 0), std::max(tb.int_bits(), bits_a) + 1, std::max(ta.lanes(), tb.lanes()));
+
+            //return FixedPoint(std::max(ta.int_bits(), tb.int_bits()) + 1 + std::max(ta.bits() - ta.int_bits(), tb.bits() - tb.int_bits()), std::max(ta.int_bits(), tb.int_bits()) + 1, std::max(ta.lanes(), tb.lanes()));
+            //out_type = FixedPoint(max(ta.bits(), tb.bits())+1, max(ta.int_bits(), tb.int_bits())+1, max(ta.lanes(), tb.lanes()))
+            //out_type = 
+        } else if (ta.is_fixed_ufixed_point() && tb.is_fixed_ufixed_point()) {
+            return FixedPoint(std::max(ta.int_bits(), tb.int_bits()) + 1 + std::max(ta.bits() - ta.int_bits(), tb.bits() - tb.int_bits()), std::max(ta.int_bits(), tb.int_bits()) + 1, std::max(ta.lanes(), tb.lanes()));
+        } else {
+            internal_error << "Could not match types: " << ta << ", " << tb << "\n";
+        }
+        return Type();
+    }
+
     static const IRNodeType _type_info = IRNodeType::Add;
 };
 
@@ -48,6 +113,56 @@ struct Sub : public ExprNode<Sub> {
 
     EXPORT static Expr make(const Expr &a, const Expr &b);
 
+    inline Type match_output_type(const Expr &a, const Expr &b) {
+        Type ta = a.type(), tb = b.type();
+
+        // Add Fixed-point case
+        if (ta.is_fixed_point() && tb.is_float()) {
+            // Convert to float
+            return tb;
+        } else if (ta.is_float() && tb.is_fixed_point()) {
+            // Convert to float
+            return ta;
+        } else if (ta.is_fixed_point() && (tb.is_uint() || tb.is_int())) {
+            // Convert to fixed_point
+            const IntImm *int_b = b.as<IntImm>();
+            const UIntImm *uint_b = b.as<UIntImm>();
+            int bits_b;
+            if (int_b) {
+                bits_b = get_min_nb_bits(std::abs(int_b->value)+1);
+            } else if (uint_b) {
+                bits_b = get_min_nb_bits(uint_b->value);
+            } else {
+                bits_b = tb.bits();
+            }
+            return FixedPoint(std::max(ta.int_bits(), bits_b) + std::max(ta.bits() - ta.int_bits(), 0), std::max(ta.int_bits(), bits_b), std::max(ta.lanes(), tb.lanes()));
+            //out_type = FixedPoint(max(ta.bits(), tb.bits())+1, max(ta.int_bits(), tb.int_bits())+1, max(ta.lanes(), tb.lanes()));
+            //out_type = 
+        } else if ((ta.is_uint() || ta.is_int()) && tb.is_fixed_point()) {
+            // Convert to fixed point
+            //a = cast(FixedPoint(ta.bits(), ta.bits()), a);
+            const IntImm *int_a = a.as<IntImm>();
+            const UIntImm *uint_a = a.as<UIntImm>();
+            int bits_a;
+            if (int_a) {
+                bits_a = get_min_nb_bits(std::abs(int_a->value)+1);
+            } else if (uint_a) {
+                bits_a = get_min_nb_bits(uint_a->value);
+            } else {
+                bits_a = tb.bits();
+            }
+            return FixedPoint(std::max(tb.int_bits(), bits_a) + 1 + std::max(tb.bits() - tb.int_bits(), 0), std::max(tb.int_bits(), bits_a) + 1, std::max(ta.lanes(), tb.lanes()));
+            //return FixedPoint(std::max(ta.int_bits(), tb.int_bits()) + 1 + std::max(ta.bits() - ta.int_bits(), tb.bits() - tb.int_bits()), std::max(ta.int_bits(), tb.int_bits()) + 1, std::max(ta.lanes(), tb.lanes()));
+            //out_type = FixedPoint(max(ta.bits(), tb.bits())+1, max(ta.int_bits(), tb.int_bits())+1, max(ta.lanes(), tb.lanes()))
+            //out_type = 
+        } else if (ta.is_fixed_ufixed_point() && tb.is_fixed_ufixed_point()) {
+            return FixedPoint(std::max(ta.int_bits(), tb.int_bits()) + 1 + std::max(ta.bits() - ta.int_bits(), tb.bits() - tb.int_bits()), std::max(ta.int_bits(), tb.int_bits()) + 1, std::max(ta.lanes(), tb.lanes()));
+        } else {
+            internal_error << "Could not match types: " << ta << ", " << tb << "\n";
+        }
+        return Type();
+    }
+
     static const IRNodeType _type_info = IRNodeType::Sub;
 };
 
@@ -56,6 +171,56 @@ struct Mul : public ExprNode<Mul> {
     Expr a, b;
 
     EXPORT static Expr make(const Expr &a, const Expr &b);
+
+    inline Type match_output_type(const Expr &a, const Expr &b) {
+        Type ta = a.type(), tb = b.type();
+
+        // Mul Fixed-point case
+        if (ta.is_fixed_point() && tb.is_float()) {
+            // Convert to float
+            return tb;
+        } else if (ta.is_float() && tb.is_fixed_point()) {
+            // Convert to float
+            return tb;
+        } else if (ta.is_fixed_point() && (tb.is_uint() || tb.is_int())) {
+            // Convert to fixed_point
+            const IntImm *int_b = b.as<IntImm>();
+            const UIntImm *uint_b = b.as<UIntImm>();
+            int bits_b;
+            if (int_b) {
+                bits_b = get_min_nb_bits(std::abs(int_b->value)+1);
+            } else if (uint_b) {
+                bits_b = get_min_nb_bits(uint_b->value);
+            } else {
+                bits_b = tb.bits();
+            }
+            return FixedPoint(ta.int_bits() + bits_b + (ta.bits() - ta.int_bits()), ta.int_bits() + bits_b, std::max(ta.lanes(), tb.lanes()));
+
+            //b = cast(FixedPoint(tb.bits(), tb.bits()), b);
+            //out_type = FixedPoint(max(ta.bits(), tb.bits())+1, max(ta.int_bits(), tb.int_bits())+1, max(ta.lanes(), tb.lanes()));
+            // return FixedPoint(ta.int_bits() + tb.int_bits() + (ta.bits() - ta.int_bits()) + (tb.bits() - tb.int_bits()), ta.int_bits() + tb.int_bits(), std::max(ta.lanes(), tb.lanes()));
+        } else if ((ta.is_uint() || ta.is_int()) && tb.is_fixed_point()) {
+            // Convert to fixed point
+            const IntImm *int_a = a.as<IntImm>();
+            const UIntImm *uint_a = a.as<UIntImm>();
+            int bits_a;
+            if (int_a) {
+                bits_a = get_min_nb_bits(std::abs(int_a->value)+1);
+            } else if (uint_a) {
+                bits_a = get_min_nb_bits(uint_a->value);
+            } else {
+                bits_a = tb.bits();
+            }
+            //a = cast(FixedPoint(ta.bits(), ta.bits()), a);
+            //out_type = FixedPoint(max(ta.bits(), tb.bits())+1, max(ta.int_bits(), tb.int_bits())+1, max(ta.lanes(), tb.lanes()))
+            return FixedPoint(bits_a + tb.int_bits() + (tb.bits() - tb.int_bits()), bits_a + tb.int_bits(), std::max(ta.lanes(), tb.lanes()));
+        } else if (ta.is_fixed_ufixed_point() && tb.is_fixed_ufixed_point()) {
+            return FixedPoint(ta.int_bits() + tb.int_bits() + (ta.bits() - ta.int_bits()) + (tb.bits() - tb.int_bits()), ta.int_bits() + tb.int_bits(), std::max(ta.lanes(), tb.lanes()));
+        } else {
+            internal_error << "Could not match types: " << ta << ", " << tb << "\n";
+        }
+        return Type();
+    }
 
     static const IRNodeType _type_info = IRNodeType::Mul;
 };

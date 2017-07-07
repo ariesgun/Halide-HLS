@@ -27,6 +27,10 @@ class MonotonicVisitor : public IRVisitor {
         result = Monotonic::Constant;
     }
 
+    void visit(const FixedPointImm *) {
+        result = Monotonic::Constant;
+    }
+
     void visit(const DivImm *) {
         internal_error << "Monotonic on DivImm\n";
     }

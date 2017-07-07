@@ -152,6 +152,10 @@ EXPORT Expr lossless_cast(Type t, const Expr &e);
  *
  */
 EXPORT void match_types(Expr &a, Expr &b);
+EXPORT void match_fixed_point_types_add(Expr &a, Expr &b);
+EXPORT void match_fixed_point_types_sub(Expr &a, Expr &b);
+EXPORT void match_fixed_point_types_mul(Expr &a, Expr &b);
+EXPORT void match_fixed_point_types_div(Expr &a, Expr &b);
 
 /** Halide's vectorizable transcendentals. */
 // @{
@@ -212,22 +216,24 @@ inline Expr cast(Type t, const Expr &a) {
     }
 
     // Fold constants early
-    if (const int64_t *i = as_const_int(a)) {
-        return Internal::make_const(t, *i);
-    }
-    if (const uint64_t *u = as_const_uint(a)) {
-        return Internal::make_const(t, *u);
-    }
-    if (const double *f = as_const_float(a)) {
-        return Internal::make_const(t, *f);
-    }
-
-    if (t.is_vector()) {
-        if (a.type().is_scalar()) {
-            return Internal::Broadcast::make(cast(t.element_of(), a), t.lanes());
-        } else if (const Internal::Broadcast *b = a.as<Internal::Broadcast>()) {
-            internal_assert(b->lanes == t.lanes());
-            return Internal::Broadcast::make(cast(t.element_of(), b->value), t.lanes());
+    if (!t.is_fixed_ufixed_point()) {
+        if (const int64_t *i = as_const_int(a)) {
+            return Internal::make_const(t, *i);
+        }
+        if (const uint64_t *u = as_const_uint(a)) {
+            return Internal::make_const(t, *u);
+        }
+        if (const double *f = as_const_float(a)) {
+            return Internal::make_const(t, *f);
+        }
+    
+        if (t.is_vector()) {
+            if (a.type().is_scalar()) {
+                return Internal::Broadcast::make(cast(t.element_of(), a), t.lanes());
+            } else if (const Internal::Broadcast *b = a.as<Internal::Broadcast>()) {
+                internal_assert(b->lanes == t.lanes());
+                return Internal::Broadcast::make(cast(t.element_of(), b->value), t.lanes());
+            }
         }
     }
     return Internal::Cast::make(t, a);
@@ -317,6 +323,8 @@ inline Expr &operator-=(Expr &a, const Expr &b) {
 /** Return the product of two expressions, doing any necessary type
  * coercion using \ref Internal::match_types */
 inline Expr operator*(Expr a, Expr b) {
+    //user_warning << "Entering operation * between " << a << " and " << b << "\n";
+    //user_warning << "   Entering operation * between " << a.type() << " and " << b.type() << "\n";
     user_assert(a.defined() && b.defined()) << "operator* of undefined Expr\n";
     Internal::match_types(a, b);
     return Internal::Mul::make(a, b);
@@ -775,9 +783,11 @@ inline Expr clamp(const Expr &a, const Expr &min_val, const Expr &max_val) {
     user_assert(a.defined() && min_val.defined() && max_val.defined())
         << "clamp of undefined Expr\n";
     Expr n_min_val = lossless_cast(a.type(), min_val);
+    Internal::debug(3) << "n_min_val is " << n_min_val << a.type() << " from " << min_val << "\n";
     user_assert(n_min_val.defined())
         << "clamp with possibly out of range minimum bound: " << min_val << "\n";
     Expr n_max_val = lossless_cast(a.type(), max_val);
+    Internal::debug(3) << "n_max_val is " << n_max_val << n_max_val.type() << " from " << max_val <<"\n";
     user_assert(n_max_val.defined())
         << "clamp with possibly out of range maximum bound: " << max_val << "\n";
     return Internal::Max::make(Internal::Min::make(a, n_max_val), n_min_val);
@@ -834,8 +844,11 @@ inline Expr select(Expr condition, Expr true_value, Expr false_value) {
     // Coerce int literals to the type of the other argument
     if (as_const_int(true_value)) {
         true_value = cast(false_value.type(), true_value);
-    }
+    } 
     if (as_const_int(false_value)) {
+        false_value = cast(true_value.type(), false_value);
+    } 
+    if (as_const_float(false_value) && (true_value.type().is_fixed_point() || true_value.type().is_ufixed_point())) {
         false_value = cast(true_value.type(), false_value);
     }
 

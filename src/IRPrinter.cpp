@@ -30,12 +30,22 @@ ostream &operator<<(ostream &out, const Type &type) {
             out << "(void *)";
         }
         break;
+    case Type::FixedPoint:
+        out << "fixedpoint<";
+        break;
+    case Type::UFixedPoint:
+        out << "ufixedpoint<";
+        break;
     }
-    if (!type.is_handle()) {
+    if (type.code() == Type::FixedPoint || type.code() == Type::UFixedPoint) {
+        out << type.bits() << "," << type.int_bits();
+        out << ">";
+    } else if (!type.is_handle()) {
         out << type.bits();
     }
     if (type.lanes() > 1) out << 'x' << type.lanes();
-    return out;
+
+    return out; 
 }
 
 ostream &operator<<(ostream &stream, const Expr &ir) {
@@ -279,6 +289,10 @@ void IRPrinter::visit(const FloatImm *op) {
 
 void IRPrinter::visit(const DivImm *op) {
   stream << "(" << op->type << ")" << op->value_a << "/" << op->value_b;
+}
+
+void IRPrinter::visit(const FixedPointImm *op) {
+    stream << "fixedpoint<" << op->type.bits() << "," << op->type.int_bits() << ">(" << op->value << "f)";
 }
 
 void IRPrinter::visit(const StringImm *op) {

@@ -256,7 +256,7 @@ Stmt build_provide_loop_nest(string func_name,
         Expr v = def.values()[i];
         v = qualify(prefix, v);
         values[i] = v;
-        debug(3) << "Value " << i << " = " << v << "\n";
+        debug(3) << "Value " << i << " = " << v << " with type " << v.type() << "\n";
     }
 
     // Default stored locations
@@ -469,6 +469,13 @@ Stmt build_produce(Function f, const Target &target) {
         }
         return check;
     } else {
+
+        debug(3) << "Build Produce: " << f.name() << "\n";
+        debug(3) << " with types : ";
+        for(size_t i = 0 ; i < f.output_types().size(); i++) {
+            debug(3) << " " << f.output_types()[i] << "\n";
+        }
+
 
         string prefix = f.name() + ".s0.";
         vector<string> dims = f.args();

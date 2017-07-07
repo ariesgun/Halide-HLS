@@ -1884,6 +1884,10 @@ public:
      */
     EXPORT Func &fifo_depth(Func consumer, int depth);
 
+    /** Cast a particular function into a certain data type.
+    */
+    EXPORT Func &cast_to(Type type, std::vector<std::pair<Expr&, Type>> exprs = {}, std::vector<std::pair<Expr&, Type>> args_exprs = {});
+    
     /** Aggressively inline all uses of this function. This is the
      * default schedule, so you're unlikely to need to call this. For
      * a Func with an update definition, that means it gets computed

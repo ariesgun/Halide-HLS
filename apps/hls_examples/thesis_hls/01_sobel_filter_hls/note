@@ -1,0 +1,14 @@
+sobel_filter_ori: floating-point, sqrt using floating point
+sobel_filter_fixed: fixed-point, sqrt using floating-point
+sobel_filter_fixed_sqrt: fixed-point, sqrt using fixed-point
+sobel_filter_fixed_manual : manual implemented fixed-point.
+
+sobel_filter_no_sqrt_ori: floating-point, using abs()
+sobel_filter_no_sqrt_fixed: fixed-point, using abs()
+
+sobel_filter_no_clamped_fixed: fixed-point, remvoe the clamped and direct casting to uint_8.
+
+sobel_filter_with_reorder: gray(c, x ,y);
+
+backup : Can only be made in the top folder.
+

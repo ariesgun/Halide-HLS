@@ -4,8 +4,8 @@
 #include <stdint.h>
 #include "runtime/HalideRuntime.h"
 #include "Error.h"
-#include "Util.h"
 #include "Float16.h"
+#include "Util.h"
 
 /** \file
  * Defines halide types
@@ -293,6 +293,8 @@ struct Type {
     static const halide_type_code_t Int = halide_type_int;
     static const halide_type_code_t UInt = halide_type_uint;
     static const halide_type_code_t Float = halide_type_float;
+    static const halide_type_code_t FixedPoint = halide_type_fixed_point;
+    static const halide_type_code_t UFixedPoint = halide_type_ufixed_point;
     static const halide_type_code_t Handle = halide_type_handle;
     // @}
 
@@ -308,7 +310,16 @@ struct Type {
      * bits: The bit size of one element.
      * lanes: The number of vector elements in the type. */
     Type(halide_type_code_t code, int bits, int lanes, const halide_handle_cplusplus_type *handle_type = nullptr)
-        : type(code, (uint8_t)bits, (uint16_t)lanes), handle_type(handle_type) {
+        : type(code, (uint16_t)bits, (uint16_t)lanes), handle_type(handle_type) {
+    }
+
+    /** Construct a runtime representation of a Halide type from:
+     * code: The fundamental type from an enum.
+     * bits: The bit size of one element.
+     * int_bits: The integer bit-width. For fixed_point data type.
+     * lanes: The number of vector elements in the type. */
+    Type(halide_type_code_t code, int bits, int int_bits, int lanes, const halide_handle_cplusplus_type *handle_type = nullptr)
+        : type(code, (uint16_t)bits, (uint16_t) int_bits, (uint16_t)lanes), handle_type(handle_type) {
     }
 
     /** Trivial copy constructor. */
@@ -330,6 +341,9 @@ struct Type {
     /** Return the bit size of a single element of this type. */
     int bits() const { return type.bits; }
 
+    /** Return the bit size of the integer part of a fixed_point. */
+    int int_bits() const { return type.int_bits; }    
+
     /** Return the number of vector elements in this type. */
     int lanes() const { return type.lanes; }
 
@@ -348,7 +362,7 @@ struct Type {
     /** Return Type with same type code and number of bits,
      * but new_lanes for the number of vector lanes. */
     Type with_lanes(int new_lanes) const {
-        return Type(code(), bits(), new_lanes, handle_type);
+        return Type(code(), bits(), int_bits(), new_lanes, handle_type);
     }
 
     /** Type to be printed when declaring handles of this type. */
@@ -368,6 +382,15 @@ struct Type {
     /** Is this type a floating point type (float or double). */
     bool is_float() const {return code() == Float;}
 
+    /** Is this type a fixed-point type */
+    bool is_fixed_point() const {return code() == FixedPoint;}
+
+    /** Is this type a unsigned fixed-point type */
+    bool is_ufixed_point() const {return code() == UFixedPoint;}
+
+    /** Helper function for signed or unsigned fixed point **/
+    bool is_fixed_ufixed_point() const {return code() == FixedPoint || code() == UFixedPoint;}
+
     /** Is this type a signed integer type? */
     bool is_int() const {return code() == Int;}
 
@@ -382,13 +405,19 @@ struct Type {
 
     /** Compare two types for equality */
     bool operator==(const Type &other) const {
-        return code() == other.code() && bits() == other.bits() && lanes() == other.lanes() &&
-            (code() != Handle || same_handle_type(other));
+        if (code() == FixedPoint || code() == UFixedPoint) {
+            return other.code() == FixedPoint || other.code() == UFixedPoint;// || other.code() == UInt || other.code() == Int; // || other.code() == Float;
+        } else if (other.code() == FixedPoint || other.code() == UFixedPoint) {
+            return code() == FixedPoint || code() == UFixedPoint;// || code() == UInt || code() == Int; // || code() == Float;
+        } else {
+            return code() == other.code() && bits() == other.bits() && lanes() == other.lanes() &&
+                (code() != Handle || same_handle_type(other));
+        }
     }
 
     /** Compare two types for inequality */
     bool operator!=(const Type &other) const {
-        return code() != other.code() || bits() != other.bits() || lanes() != other.lanes() ||
+        return code() != other.code() || (code() != FixedPoint && bits() != other.bits()) || lanes() != other.lanes() ||
             (code() == Handle && !same_handle_type(other));
     }
 
@@ -441,6 +470,16 @@ inline Type Float(int bits, int lanes = 1) {
 /** Construct a boolean type */
 inline Type Bool(int lanes = 1) {
     return UInt(1, lanes);
+}
+
+/** Construct a fixed-point type */
+inline Type FixedPoint(int total_bits, int int_bits, int lanes = 1) {
+    return Type(Type::FixedPoint, total_bits, int_bits, lanes);
+}
+
+/** Construct a unsigned fixed-point type */
+inline Type UFixedPoint(int total_bits, int int_bits, int lanes = 1) {
+    return Type(Type::UFixedPoint, total_bits, int_bits, lanes);   
 }
 
 /** Construct a handle type */

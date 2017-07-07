@@ -93,6 +93,7 @@ void CodeGen_HLS_Target::init_module() {
     // initialize the source file
     src_stream << "#include \"" << target_name << ".h\"\n\n";
     src_stream << "#include \"Linebuffer.h\"\n"
+               << "#include \"Linebuffer_fixed.h\"\n"
                << "#include \"halide_math.h\"\n";
 
 }
@@ -335,6 +336,34 @@ void CodeGen_HLS_Target::CodeGen_HLS_C::visit(const Allocate *op) {
 
     //close_scope("alloc " + print_name(op->name));
 
+}
+
+void CodeGen_HLS_Target::CodeGen_HLS_C::visit(const Max *op) {
+    if (op->type.is_fixed_point() || op->type.is_ufixed_point()) {
+        if (is_const(op->a)) {
+            print_expr(op->b);
+        } else if (is_const(op->b)) {
+            print_expr(op->a);
+        } else {
+            CodeGen_C::visit(op);
+        }
+    } else {
+        CodeGen_C::visit(op);
+    }
+}
+
+void CodeGen_HLS_Target::CodeGen_HLS_C::visit(const Min *op) {
+    if (op->type.is_fixed_point() || op->type.is_ufixed_point()) {
+        if (is_const(op->a)) {
+            print_expr(op->b);
+        } else if (is_const(op->b)) {
+            print_expr(op->a);
+        } else {
+            CodeGen_C::visit(op);
+        }
+    } else {
+        CodeGen_C::visit(op);
+    }
 }
 
 }

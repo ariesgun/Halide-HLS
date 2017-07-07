@@ -28,6 +28,7 @@
 #include "Substitute.h"
 #include "ExprUsesVar.h"
 #include "Simplify.h"
+#include "ScheduleDataTypes.h"
 #include "Solve.h"
 #include "Associativity.h"
 #include "ApplySplit.h"
@@ -195,12 +196,20 @@ int Func::dimensions() const {
 FuncRef Func::operator()(vector<Var> args) const {
     int placeholder_pos, count;
     std::tie(placeholder_pos, count) = add_implicit_vars(args);
+    debug(3) << "Entering operator() of this : " << name() << " and func " << func.name() << placeholder_pos << " " << " " << count << "\n";    
+    for (size_t i = 0 ; i < args.size(); i++) {
+        debug(3) << "   args[0] " << args[i] << "\n";
+    }
     return FuncRef(func, args, placeholder_pos, count);
 }
 
 FuncRef Func::operator()(vector<Expr> args) const {
     int placeholder_pos, count;
     std::tie(placeholder_pos, count) = add_implicit_vars(args);
+    debug(3) << "Entering operator() 2 of this : " << name() << " and placeholder pos " << placeholder_pos << " " << count << "\n";
+    for (size_t i = 0 ; i < args.size(); i++) {
+        debug(3) << "   args[0] " << args[i] << "\n";
+    }
     return FuncRef(func, args, placeholder_pos, count);
 }
 
@@ -352,6 +361,196 @@ std::string Stage::dump_argument_list() const {
 }
 
 namespace {
+
+class ApplyTypesRecasting : public IRMutator {
+    const std::pair<Expr&, Type> expr_ref;
+
+    using IRMutator::visit;
+
+    Expr search_match_expr(const Expr op) {
+        if (op.same_as(expr_ref.first)) {
+            return Cast::make(expr_ref.second, op);
+        } else {
+            return mutate(op);
+        }
+    }
+
+    Expr check_matched(const Expr op) {
+        if (op.same_as(expr_ref.first)) {
+            return Cast::make(expr_ref.second, op);
+        } else {
+            return Expr();
+        }
+    }
+
+    void visit(const Add *op) {
+
+        expr = check_matched(op);
+        if (!expr.defined()) {
+
+            //Check op->a and op->b
+            Expr new_op_a = search_match_expr(op->a);
+            Expr new_op_b = search_match_expr(op->b);
+
+            Type old_type_a = op->a.type();
+            Type old_type_b = op->b.type();
+            if (old_type_a != new_op_a.type() && old_type_b == new_op_b.type()) {
+                const Cast *tmp = op->b.as<Cast>();
+                if (tmp) {
+                    new_op_b = tmp->value;
+                }
+            } else if (old_type_a == new_op_a.type() && old_type_b != new_op_b.type()) {
+                const Cast *tmp = op->a.as<Cast>();
+                if (tmp) {
+                    new_op_a = tmp->value;
+                }
+            }
+
+            // Recompute the output type.
+            expr = new_op_a + new_op_b;
+        }
+    }
+
+    void visit(const Mul *op) {
+
+        expr = check_matched(op);
+        if (!expr.defined()) {
+            //Check op->a and op->b
+            Expr new_op_a = search_match_expr(op->a);
+            Expr new_op_b = search_match_expr(op->b);
+
+            debug(3) << "   Mul cast " << op->a << " and " << op->b << "\n";
+            debug(3) << "   Mul cast 2 " << new_op_a << " and " << new_op_b << "\n";
+
+            Type old_type_a = op->a.type();
+            Type old_type_b = op->b.type();
+            if (old_type_a != new_op_a.type() && old_type_b == new_op_b.type()) {
+                const Cast *tmp = op->b.as<Cast>();
+                if (tmp) {
+                    new_op_b = tmp->value;
+                }
+            } else if (old_type_a == new_op_a.type() && old_type_b != new_op_b.type()) {
+                const Cast *tmp = op->a.as<Cast>();
+                if (tmp) {
+                    new_op_a = tmp->value;
+                }
+            }
+
+            debug(3) << "   Mul cast 3 " << new_op_a << " and " << new_op_b << "\n";
+
+            // Recompute the output type.
+            expr = new_op_a * new_op_b;
+            debug(3) << "   Result cast " << expr << "\n";
+        }
+    }
+
+    void visit(const Sub *op) {
+
+        expr = check_matched(op);
+        if (!expr.defined()) {
+            //Check op->a and op->b
+            Expr new_op_a = search_match_expr(op->a);
+            Expr new_op_b = search_match_expr(op->b);
+
+            // Recompute the output type.
+            expr = new_op_a - new_op_b;
+        }
+    }
+
+    void visit(const Div *op) {
+
+        expr = check_matched(op);
+        if (!expr.defined()) {
+            //Check op->a and op->b
+            Expr new_op_a = search_match_expr(op->a);
+            Expr new_op_b = search_match_expr(op->b);
+
+            // Recompute the output type.
+            expr = new_op_a / new_op_b;
+        }
+    }
+
+    void visit(const Call *op) {
+        const Call *call_expr = expr_ref.first.as<Call>();
+        if (call_expr) {
+            if (op->name.compare(call_expr->name)) {
+                expr = Cast::make(expr_ref.second, op);
+            }
+        } else {
+            // Check parameter
+            std::vector<Expr> new_args;
+            for (size_t i = 0; i < op->args.size(); i++) {
+                debug(3) << "Comparing " << expr_ref.first << " with " << op->args[i] << "\n";
+                debug(3) << "Address " << &(expr_ref.first) << " and " << &(op->args[i]) << "\n";
+                //if (op->args[i].same_as(expr_ref.first)) {
+                if (equal(op->args[i], expr_ref.first)) {
+                    debug(3) << "Found call " << expr_ref.first <<"\n";
+                    new_args.push_back(Cast::make(expr_ref.second, op->args[i]));
+                } else {
+                    Expr temp = mutate(op->args[i]);
+                    new_args.push_back(temp);
+                }
+            }
+            expr = Call::make(op->type, op->name, new_args, op->call_type, op->func, op->value_index, op->image, op->param );
+            Expr temp = op;
+            debug(3) << "old " << op->call_type << op << temp << "\n";
+            debug(3) << "new " << expr << "\n";
+
+            //IRMutator::visit(op);
+        }
+    }   
+
+    void visit(const Cast *op) {
+        //Type old_type = op->value.type();
+        debug(3) << " cast check " << op->value << " with " << expr_ref.first << "\n";
+        if (equal(op->value, expr_ref.first)) {
+            debug(3) << "   EQUAL \n";
+            expr = Cast::make(expr_ref.second, op->value);
+        } else {
+            IRMutator::visit(op);
+        }
+    }
+
+    void visit(const IntImm *op) {
+        const IntImm *imm = expr_ref.first.as<IntImm>();
+        if (imm && imm->value == op->value) {
+            expr = Cast::make(expr_ref.second, op);
+        } else {
+            IRMutator::visit(op);
+        }
+    }
+
+    void visit(const UIntImm *op) {
+        const UIntImm *imm = expr_ref.first.as<UIntImm>();
+        if (imm && imm->value == op->value) {
+            expr = Cast::make(expr_ref.second, op);
+        } else {
+            IRMutator::visit(op);
+        }
+    }
+
+    void visit(const FloatImm *op) {
+        const FloatImm *imm = expr_ref.first.as<FloatImm>();
+        if (imm && imm->value == op->value) {
+            expr = Cast::make(expr_ref.second, op);
+        } else {
+            IRMutator::visit(op);
+        }
+    }
+
+    void visit(const FixedPointImm *op) {
+        IRMutator::visit(op);
+    }
+
+public:
+    ApplyTypesRecasting(const std::pair<Expr&, Type> expr_ref) : expr_ref(expr_ref) {}
+};
+
+Expr apply_types_casting(Expr val, const std::pair<Expr&, Type> expr_ref ) {
+    ApplyTypesRecasting appl(expr_ref);
+    val = appl.mutate(val);
+    return val;
+}
 
 class SubstituteSelfReference : public IRMutator {
     using IRMutator::visit;
@@ -2646,6 +2845,26 @@ Func &Func::fifo_depth(Func consumer, int depth) {
     return *this;
 }
 
+Func &Func::cast_to(Type type, std::vector<std::pair<Expr&, Type>> exprs, std::vector<std::pair<Expr&, Type>> args_exprs) {
+    invalidate_cache();
+
+    cast_data_type(func, type, exprs, args_exprs);
+    return *this;
+}
+
+// Func &Func::cast_to(Type type, std::vector<std::pair<Expr&, Type>> exprs, std::vector<std::pair<Expr, Type>> args_exprs) {
+
+//     std::vector<std::pair<Expr&, Type>> new_args_expr;
+
+//     for(size_t i = 0; i < args_exprs.size(); i++) {
+//         Expr& temp = args_exprs[i].first;
+//         std::pair<Expr&, Type> temp_pair = {temp, args_exprs[i].second};
+//         new_args_expr.push_back(temp_pair);
+//     }
+
+//     return cast_to(type, exprs, new_args_expr);
+// }
+
 Func &Func::compute_inline() {
     return compute_at(LoopLevel::inlined());
 }
@@ -2786,10 +3005,37 @@ vector<Expr> FuncRef::args_with_implicit_vars(const vector<Expr> &e) const {
 }
 
 Stage FuncRef::operator=(Expr e) {
-    return (*this) = Tuple(e);
+    debug(3) << "***Before Operator : " << (*this).func.name() << "== " << e << "\n";
+    for (size_t i = 0; i < func.get_expr_cast_ref_size(); i++) {
+        debug(3) << "Checking " << func.get_expr_cast_ref(i).first << " in " << e << "\n";
+        e = apply_types_casting(e, func.get_expr_cast_ref(i));    
+    }
+    for (size_t i = 0; i < func.get_args_expr_cast_ref_size(); i++) {
+        e = apply_types_casting(e, func.get_args_expr_cast_ref(i));    
+        for(size_t j = 0; j < (*this).args.size(); j++) {
+            debug(3) << "Checking args " << i << " " << func.get_args_expr_cast_ref(i).first << " in " << (*this).args[j] << "\n";
+            Expr new_arg = apply_types_casting((*this).args[j], func.get_args_expr_cast_ref(i));
+            (*this).args[j] = new_arg;
+            debug(3) << "Checking args " << i << " " << func.get_args_expr_cast_ref(i).first << " in " << (*this).args[j] << "\n";
+        }
+        //e = apply_types_casting(e, func.get_args_expr_cast_ref(i));    
+    }  
+    debug(3) << "***After Operator : " << (*this).func.name() << "== " << e << "\n";
+    Expr cast_e;
+    if (func.is_type_casted()) {
+        debug(3) << "   It is casted " << func.name() << "\n";
+        cast_e = Cast::make(func.get_casted_output_type(), e);
+    } else {
+        debug(3) << "   It is NOT casted " << func.name() << "\n";
+        cast_e = e;
+    }
+    debug(3) << "   Operator_2: " << (*this).func.name() << "== " << cast_e << "\n";
+
+    return (*this) = Tuple(cast_e);
 }
 
 Stage FuncRef::operator=(const Tuple &e) {
+    debug(3) << "Operator= : " << func.name() << " has " << func.has_pure_definition() << "\n";
     if (!func.has_pure_definition()) {
         for (size_t i = 0; i < args.size(); ++i) {
             const Variable *var = args[i].as<Variable>();
@@ -2832,8 +3078,9 @@ Stage FuncRef::operator=(const FuncRef &e) {
 // definition. This is a helper for FuncRef::operator+= and co.
 Func define_base_case(Internal::Function func, const vector<Expr> &a, const Tuple &e) {
     Func f(func);
-
+    
     if (func.has_pure_definition()) return f;
+    debug(3) << "Enter this " << func.name() << " and " << e[0] << "\n";
     vector<Var> pure_args(a.size());
 
     // Reuse names of existing pure args
@@ -2876,15 +3123,27 @@ Stage FuncRef::func_ref_update(const Tuple &e, int init_val) {
 template <typename BinaryOp>
 Stage FuncRef::func_ref_update(Expr e, int init_val) {
     vector<Expr> expanded_args = args_with_implicit_vars({e});
-    FuncRef self_ref = define_base_case(func, expanded_args, cast(e.type(), init_val))(expanded_args);
+    
+    Expr e_tmp;
+    if (func.is_type_casted()) {
+        Type t = func.get_casted_output_type();
+        e_tmp = Cast::make(t, init_val);
+    } else {
+        Type t = e.type();
+        e_tmp = cast(t,init_val);
+    }
+    FuncRef self_ref = define_base_case(func, expanded_args, e_tmp)(expanded_args);
+
     return self_ref = BinaryOp()(Expr(self_ref), e);
 }
 
 Stage FuncRef::operator+=(Expr e) {
+    debug(3) << "Entering tuple 0== " << e.type() << " and " << e << "\n";
     return func_ref_update<std::plus<Expr>>(e, 0);
 }
 
 Stage FuncRef::operator+=(const Tuple &e) {
+    debug(3) << "Entering tuple 1== " << e.size() << "\n";
     if (e.size() == 1) {
         return (*this) += e[0];
     } else {
@@ -2893,6 +3152,7 @@ Stage FuncRef::operator+=(const Tuple &e) {
 }
 
 Stage FuncRef::operator+=(const FuncRef &e) {
+    debug(3) << "Entering tuple 2== " << e.size() << "\n";
     if (e.size() == 1) {
         return (*this) += Expr(e);
     } else {
@@ -2968,7 +3228,13 @@ FuncRef::operator Expr() const {
         << "Can't convert a reference Func \"" << func.name()
         << "\" to an Expr, because " << func.name() << " returns a Tuple.\n";
 
-    return Call::make(func, args);
+    debug(3) << "Expr from FunctionRef: " << func.name() << " results : " << Call::make(func, args) << " and type: " << func.output_types()[0]<< "\n";
+    if (func.is_type_casted() && func.output_types()[0] != func.get_casted_output_type()) {
+        return Cast::make(func.get_casted_output_type(), Call::make(func, args));
+    } else {
+        return Call::make(func, args);
+    }
+    
 }
 
 FuncTupleElementRef FuncRef::operator[](int i) const {

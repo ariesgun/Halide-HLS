@@ -13,7 +13,7 @@ Expr lower_lerp(Expr zero_val, Expr one_val, Expr weight) {
     Expr result;
 
     internal_assert(zero_val.type() == one_val.type());
-    internal_assert(weight.type().is_uint() || weight.type().is_float());
+    internal_assert(weight.type().is_uint() || weight.type().is_float() || weight.type().is_fixed_point() || weight.type().is_ufixed_point());
 
     Type result_type = zero_val.type();
 
@@ -66,6 +66,18 @@ Expr lower_lerp(Expr zero_val, Expr one_val, Expr weight) {
                                    computation_type.max() * typed_weight);
                 }
                 inverse_typed_weight = computation_type.max() - typed_weight;
+            } else {
+                inverse_typed_weight = 1.0f - typed_weight;
+            }
+
+        } else if (weight.type().is_fixed_point() || weight.type().is_ufixed_point()) {
+            // Add case for fixed_point data type
+            typed_weight = weight;
+
+            // Computation type in fixed-point too
+            if (computation_type.is_fixed_point() || computation_type.is_ufixed_point()) {
+                inverse_typed_weight = Cast::make(typed_weight.type(), 
+                                        1 - typed_weight); 
             } else {
                 inverse_typed_weight = 1.0f - typed_weight;
             }
@@ -128,7 +140,7 @@ Expr lower_lerp(Expr zero_val, Expr one_val, Expr weight) {
             }
         }
 
-        if (computation_type.is_float()) {
+        if (computation_type.is_float() || computation_type.is_fixed_point()) {
             result = zero_val * inverse_typed_weight +
                 one_val * typed_weight;
         } else {

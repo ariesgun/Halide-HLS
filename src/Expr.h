@@ -25,6 +25,7 @@ enum class IRNodeType {
     IntImm,
     UIntImm,
     FloatImm,
+    FixedPointImm,
     DivImm,
     StringImm,
     Cast,
@@ -270,6 +271,35 @@ struct FloatImm : public ExprNode<FloatImm> {
     }
 
     static const IRNodeType _type_info = IRNodeType::FloatImm;
+};
+
+/** Fixed point constants */
+struct FixedPointImm : public ExprNode<FixedPointImm> {
+    double value;
+    bool is_signed;
+    bool is_float;
+
+    template <typename T>
+    static const FixedPointImm *make(Type t, T value, bool is_signed) {
+        internal_assert((t.is_fixed_point() || t.is_ufixed_point()) && t.is_scalar())
+            << "FixedPointImm must be a scalar fixed-point\n";
+        FixedPointImm *node = new FixedPointImm;
+        node->type = t;
+        node->value = (double) value;
+        node->is_signed = is_signed;
+        if (std::is_same<T, float>::value || std::is_same<T, double>::value) {
+            node->is_float = true;
+        } else {
+            node->is_float = false;
+        }
+        return node;
+    }
+
+    bool is_int(uint64_t in_val) const {
+        return (!is_float && (uint64_t)value == in_val);
+   }
+
+    static const IRNodeType _type_info = IRNodeType::FixedPointImm;
 };
 
 /** String constants */

@@ -8,7 +8,7 @@ namespace Internal {
 Expr Cast::make(Type t, const Expr &v) {
     internal_assert(v.defined()) << "Cast of undefined\n";
     internal_assert(t.lanes() == v.type().lanes()) << "Cast may not change vector widths\n";
-
+ 
     Cast *node = new Cast;
     node->type = t;
     node->value = v;
@@ -21,7 +21,11 @@ Expr Add::make(const Expr &a, const Expr &b) {
     internal_assert(a.type() == b.type()) << "Add of mismatched types\n";
 
     Add *node = new Add;
-    node->type = a.type();
+    if (a.type().is_fixed_ufixed_point() || b.type().is_fixed_ufixed_point()) {
+        node->type = node->match_output_type(a, b);
+    } else {
+        node->type = a.type();
+    }
     node->a = a;
     node->b = b;
     return node;
@@ -33,7 +37,11 @@ Expr Sub::make(const Expr &a, const Expr &b) {
     internal_assert(a.type() == b.type()) << "Sub of mismatched types\n";
 
     Sub *node = new Sub;
-    node->type = a.type();
+    if (a.type().is_fixed_ufixed_point() || b.type().is_fixed_ufixed_point()) {
+        node->type = node->match_output_type(a, b);
+    } else {
+        node->type = a.type();
+    }
     node->a = a;
     node->b = b;
     return node;
@@ -42,10 +50,14 @@ Expr Sub::make(const Expr &a, const Expr &b) {
 Expr Mul::make(const Expr &a, const Expr &b) {
     internal_assert(a.defined()) << "Mul of undefined\n";
     internal_assert(b.defined()) << "Mul of undefined\n";
-    internal_assert(a.type() == b.type()) << "Mul of mismatched types\n";
+    internal_assert(a.type() == b.type()) << "Mul of mismatched types between " << a << " and " << b << "\n";
 
     Mul *node = new Mul;
-    node->type = a.type();
+    if (a.type().is_fixed_ufixed_point() || b.type().is_fixed_ufixed_point()) {
+        node->type = node->match_output_type(a, b);
+    } else {
+        node->type = a.type();
+    }
     node->a = a;
     node->b = b;
     return node;
@@ -216,7 +228,7 @@ Expr Select::make(const Expr &condition, const Expr &true_value, const Expr &fal
     internal_assert(true_value.defined()) << "Select of undefined\n";
     internal_assert(false_value.defined()) << "Select of undefined\n";
     internal_assert(condition.type().is_bool()) << "First argument to Select is not a bool: " << condition.type() << "\n";
-    internal_assert(false_value.type() == true_value.type()) << "Select of mismatched types\n";
+    // internal_assert(false_value.type() == true_value.type()) << "Select of mismatched types\n";
     internal_assert(condition.type().is_scalar() ||
                     condition.type().lanes() == true_value.type().lanes())
         << "In Select, vector lanes of condition must either be 1, or equal to vector lanes of arguments\n";
@@ -386,6 +398,8 @@ Stmt Allocate::make(const std::string &name, Type type, const std::vector<Expr> 
     internal_assert(condition.defined()) << "Allocate with undefined condition\n";
     internal_assert(condition.type().is_bool()) << "Allocate condition is not boolean\n";
 
+    debug(3) << "Allocate string: " << name << " with type " << type << "\n";
+
     Allocate *node = new Allocate;
     node->name = name;
     node->type = type;
@@ -530,7 +544,14 @@ Expr Call::make(Function func, const std::vector<Expr> &args, int idx) {
         << "Value index out of range in call to halide function\n";
     internal_assert(func.has_pure_definition() || func.has_extern_definition())
         << "Call to undefined halide function\n";
-    return make(func.output_types()[(size_t)idx], func.name(), args, Halide,
+
+    Type t;
+    if (func.is_type_casted()) {
+        t = func.get_casted_output_type();
+    } else {
+        t = func.output_types()[(size_t)idx];
+    }
+    return make(t, func.name(), args, Halide,
                 func.get_contents(), idx, Buffer<>(), Parameter());
 }
 
@@ -732,6 +753,7 @@ bool Shuffle::is_extract_element() const {
 template<> void ExprNode<IntImm>::accept(IRVisitor *v) const { v->visit((const IntImm *)this); }
 template<> void ExprNode<UIntImm>::accept(IRVisitor *v) const { v->visit((const UIntImm *)this); }
 template<> void ExprNode<FloatImm>::accept(IRVisitor *v) const { v->visit((const FloatImm *)this); }
+template<> void ExprNode<FixedPointImm>::accept(IRVisitor *v) const { v->visit((const FixedPointImm *)this); }
 template<> void ExprNode<DivImm>::accept(IRVisitor *v) const { v->visit((const DivImm *) this); }
 template<> void ExprNode<StringImm>::accept(IRVisitor *v) const { v->visit((const StringImm *)this); }
 template<> void ExprNode<Cast>::accept(IRVisitor *v) const { v->visit((const Cast *)this); }
