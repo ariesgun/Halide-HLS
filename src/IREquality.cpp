@@ -250,7 +250,7 @@ void IRComparer::visit(const FloatImm *op) {
 
 void IRComparer::visit(const FixedPointImm *op) {
     const FixedPointImm *e = expr.as<FixedPointImm>();
-    compare_scalar(e->value, op->value);
+    compare_scalar(e->value.f, op->value.f);
 }
 
 void IRComparer::visit(const DivImm *op) {

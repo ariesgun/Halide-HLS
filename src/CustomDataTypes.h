@@ -69,39 +69,56 @@ private:
 };
 
 // Arbitrary Data Type
+template<int BIT_W, bool SIGNED>
 struct arb_int_t {
-	int32_t bit_width;
-	bool is_signed;
+    static const int bit_width = BIT_W;
+    static const bool is_signed = SIGNED;
 
-	/// \name Constructors
-	/// @{
+    typedef bool arb_int;
+};
 
-	/** Construct an arbitrary precision data type from an signed integer value.
-	 *
-	 *	\param value of the input integer
-	 *  
-	 */
-	EXPORT explicit arb_int_t(int value);
+template <typename T, typename = int>
+struct isArbInt : std::false_type { };
 
-	/** Construct an arbitrary precision data type from an unsigned integer value.
-	 *
-	 *	\param value of the input integer
-	 *  
-	 */
-	EXPORT explicit arb_int_t(uint value);
+template <typename T>
+struct isArbInt<T, decltype((void) T::arb_int, 0)> : std::true_type { };
 
+template<typename T>
+struct has_arb_int {
+    typedef char yes[1];
+    typedef char no[2];
+
+    template <typename C>
+    static yes& test(typename C::arb_int*);
+
+    template <typename>
+    static no& test(...);
+
+    static const bool value = sizeof(test<T>(nullptr)) == sizeof(yes);
 };
 
 } // namespace Halide'
 
-template<>
-HALIDE_ALWAYS_INLINE halide_type_t halide_type_of<Halide::arb_int_t>(uint16_t bits) {
-    return halide_type_t(halide_type_fixed_point, bits);
-}
+template<bool SIGNED, int BIT_W, int INT_W >
+struct halide_type_of_helper {
+    static HALIDE_ALWAYS_INLINE halide_type_t halide_type_of_custom() {
+        if (SIGNED) {
+            return halide_type_t(halide_type_fixed_point, BIT_W, INT_W, 1);
+        } else {
+            return halide_type_t(halide_type_ufixed_point, BIT_W, INT_W, 1);
+        }
+    }
+};
 
-template<>
-HALIDE_ALWAYS_INLINE halide_type_t halide_type_of<Halide::fixed_point_t>(uint16_t bits, uint16_t int_bits) {
-    return halide_type_t(halide_type_fixed_point, bits, int_bits, 1);
-}
+template<bool SIGNED, int BIT_W>
+struct halide_type_of_helper<SIGNED, BIT_W, BIT_W> {
+    static HALIDE_ALWAYS_INLINE halide_type_t halide_type_of_custom() {
+        if (SIGNED) {
+            return halide_type_t(halide_type_fixed_point, BIT_W, BIT_W, 1);
+        } else {
+            return halide_type_t(halide_type_ufixed_point, BIT_W, BIT_W, 1);
+        }
+    }
+};
 
 #endif

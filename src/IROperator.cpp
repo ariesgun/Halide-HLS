@@ -76,7 +76,7 @@ bool is_const(const Expr &e, int64_t value) {
     } else if (const FloatImm *i = e.as<FloatImm>()) {
         return i->value == value;
     } else if (const FixedPointImm *i = e.as<FixedPointImm>()) {
-        return i->value == (uint64_t) value;
+        return i->value.i == value;
     } else if (const Cast *c = e.as<Cast>()) {
         return is_const(c->value, value);
     } else if (const Broadcast *b = e.as<Broadcast>()) {
@@ -99,6 +99,11 @@ const int64_t *as_const_int(const Expr &e) {
         return as_const_int(b->value);
     } else if (const IntImm *i = e.as<IntImm>()) {
         return &(i->value);
+    } else if (const FixedPointImm *fp = e.as<FixedPointImm>()) {
+        if (!fp->is_float && fp->is_signed) {
+            return &(fp->value.i);
+        } 
+        return nullptr;
     } else {
         return nullptr;
     }
@@ -111,6 +116,11 @@ const uint64_t *as_const_uint(const Expr &e) {
         return as_const_uint(b->value);
     } else if (const UIntImm *i = e.as<UIntImm>()) {
         return &(i->value);
+    } else if (const FixedPointImm *fp = e.as<FixedPointImm>()) {
+        if (!fp->is_float && !fp->is_signed) {
+            return &(fp->value.ui);
+        }
+        return nullptr;
     } else {
         return nullptr;
     }
@@ -123,6 +133,11 @@ const double *as_const_float(const Expr &e) {
         return as_const_float(b->value);
     } else if (const FloatImm *f = e.as<FloatImm>()) {
         return &(f->value);
+    } else if (const FixedPointImm *fp = e.as<FixedPointImm>()) {
+        if (fp->is_float) { 
+            return &(fp->value.f);
+        }
+        return nullptr;
     } else {
         return nullptr;
     }
@@ -221,7 +236,13 @@ bool is_zero(const Expr &e) {
     if (const IntImm *int_imm = e.as<IntImm>()) return int_imm->value == 0;
     if (const UIntImm *uint_imm = e.as<UIntImm>()) return uint_imm->value == 0;
     if (const FloatImm *float_imm = e.as<FloatImm>()) return float_imm->value == 0.0;
-    if (const FixedPointImm *fixed_imm = e.as<FixedPointImm>()) return fixed_imm->value == 0;
+    if (const FixedPointImm *fixed_imm = e.as<FixedPointImm>()) { 
+        if (fixed_imm->is_float) {
+            return fixed_imm->value.f == 0.0f;
+        } else {
+            return fixed_imm->value.i == 0;
+        }
+    }
     if (const Cast *c = e.as<Cast>()) return is_zero(c->value);
     if (const Broadcast *b = e.as<Broadcast>()) return is_zero(b->value);
     if (const Call *c = e.as<Call>()) {
@@ -235,7 +256,13 @@ bool is_one(const Expr &e) {
     if (const IntImm *int_imm = e.as<IntImm>()) return int_imm->value == 1;
     if (const UIntImm *uint_imm = e.as<UIntImm>()) return uint_imm->value == 1;
     if (const FloatImm *float_imm = e.as<FloatImm>()) return float_imm->value == 1.0;
-    if (const FixedPointImm *fixed_imm = e.as<FixedPointImm>()) return fixed_imm->is_int(1);
+    if (const FixedPointImm *fixed_imm = e.as<FixedPointImm>()) { 
+        if (fixed_imm->is_float) {
+            return fixed_imm->value.f == 1.0f;
+        } else {
+            return fixed_imm->value.i == 1;
+        }
+    }
     if (const Cast *c = e.as<Cast>()) return is_one(c->value);
     if (const Broadcast *b = e.as<Broadcast>()) return is_one(b->value);
     if (const Call *c = e.as<Call>()) {
@@ -250,7 +277,13 @@ bool is_two(const Expr &e) {
     if (const IntImm *int_imm = e.as<IntImm>()) return int_imm->value == 2;
     if (const UIntImm *uint_imm = e.as<UIntImm>()) return uint_imm->value == 2;
     if (const FloatImm *float_imm = e.as<FloatImm>()) return float_imm->value == 2.0;
-    if (const FixedPointImm *fixed_imm = e.as<FixedPointImm>()) return fixed_imm->is_int(2);
+    if (const FixedPointImm *fixed_imm = e.as<FixedPointImm>()) { 
+        if (fixed_imm->is_float) {
+            return fixed_imm->value.f == 2.0f;
+        } else {
+            return fixed_imm->value.i == 2;
+        }
+    }
     if (const Cast *c = e.as<Cast>()) return is_two(c->value);
     if (const Broadcast *b = e.as<Broadcast>()) return is_two(b->value);
     return false;
@@ -268,7 +301,7 @@ Expr make_const_helper(Type t, T val) {
     } else if (t.is_float()) {
         return FloatImm::make(t, (double)val);
     } else if (t.is_fixed_point() || t.is_ufixed_point()) {
-        return FixedPointImm::make(t, val, t.is_fixed_point()); // FIx this
+        return FixedPointImm::make(t, val, val < 0); // FIx this
     } else {
         internal_error << "Can't make a constant of type " << t << "\n";
         return Expr();
@@ -277,7 +310,7 @@ Expr make_const_helper(Type t, T val) {
 }
 
 Expr make_const(Type t, int64_t val) {
-    // if (t.is_fixed_point()) {
+    // if (t.is_fixed_point() || t.is_ufixed_point()) {
     //     Internal::debug(3) << "Test 1a " << val << "\n";
     //     return IntImm::make(Int(32), val);
     // } else {

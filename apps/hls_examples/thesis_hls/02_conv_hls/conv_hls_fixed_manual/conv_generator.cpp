@@ -30,7 +30,7 @@ public:
 		// Define a 9x9 Gaussian Blur with a repeat-edge boundary condition.
         float sigma = 1.5f;
 
-        kernel(x, y) = cast<uint32_t>((exp(-(x*x + y*y)/(2*sigma*sigma)) / (float)(2*M_PI*sigma*sigma)) * 65536);
+        kernel(x, y) = cast<arb_int_t<32, false>>((exp(-(x*x + y*y)/(2*sigma*sigma)) / (float)(2*M_PI*sigma*sigma)) * 65536);
 
         // define the algorithm
         clamped(x, y) = BoundaryConditions::repeat_edge(input)(x, y);

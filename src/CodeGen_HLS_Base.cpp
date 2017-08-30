@@ -113,6 +113,7 @@ string CodeGen_HLS_Base::print_type(Type type, AppendSpaceIfNeeded space) {
 
 void CodeGen_HLS_Base::visit(const FixedPointImm *op) {
     ostringstream oss;
+    debug(3) << "Entering FixedPointImm\n";
 
     if (op->is_signed) {
         oss << "ap_fixed<" << op->type.bits() << "," << op->type.int_bits() << "> ";
@@ -121,15 +122,54 @@ void CodeGen_HLS_Base::visit(const FixedPointImm *op) {
     }
 
     if (op->is_float) {
-        oss << "(" << op->value << "f)";
+        // Write the constant as reinterpreted uint to avoid any bits lost in conversion.
+        union {
+            uint32_t as_uint;
+            float as_float;
+        } u;
+        u.as_float = op->value.f;
+        oss << "(float_from_bits(" << u.as_uint << " /* " << u.as_float << " */))";
     } else {
-        oss << "(" << (uint64_t)op->value << ")";
+        oss << "(" << (int64_t)op->value.i << ")";
     }
 
     id = oss.str();
 }
 
+void CodeGen_HLS_Base::visit(const Min *op) {
+    if (op->type.is_fixed_ufixed_point()) {
+        ostringstream oss;
+
+        string true_val = print_expr(op->a);
+        string false_val = print_expr(op->b);
+        oss << "(" << true_val << " < " << false_val
+            << " ? " << "(" << print_type(op->type) << ")" << true_val 
+            << " : " << "(" << print_type(op->type) << ")" << false_val 
+            << ")";
+        print_assignment(op->type, oss.str());
+    } else {
+        CodeGen_C::visit(op);
+    }
+}
+
+void CodeGen_HLS_Base::visit(const Max *op) {
+    if (op->type.is_fixed_ufixed_point()) {
+        ostringstream oss;
+
+        string true_val = print_expr(op->a);
+        string false_val = print_expr(op->b);
+        oss << "(" << true_val << " > " << false_val
+            << " ? " << "(" << print_type(op->type) << ")" << true_val 
+            << " : " << "(" << print_type(op->type) << ")" << false_val 
+            << ")";
+        print_assignment(op->type, oss.str());
+    } else {
+        CodeGen_C::visit(op);
+    }
+}
+
 void CodeGen_HLS_Base::visit(const Call *op) {
+    debug(3) << "Entering Call " << op->name << "\n";
     if (op->name == "linebuffer") {
         //IR: linebuffer(buffered.stencil_update.stream, buffered.stencil.stream, extent_0[, extent_1, ...])
         //C: linebuffer<extent_0[, extent_1, ...]>(buffered.stencil_update.stream, buffered.stencil.stream)

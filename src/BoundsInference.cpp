@@ -637,7 +637,7 @@ public:
 
         // Compute the intrinsic relationships between the stages of
         // the functions.
-
+        debug(3) << "Probe c1\n";
         // Figure out which functions will be inlined away
         vector<bool> inlined(f.size());
         for (size_t i = 0; i < inlined.size(); i++) {
@@ -706,7 +706,7 @@ public:
             debug(0) << " " << i << ") " << stages[i].name << "\n";
         }
         */
-
+        debug(3) << "Probe c2\n";
         // Then compute relationships between them.
         for (size_t i = 0; i < stages.size(); i++) {
 
@@ -716,12 +716,13 @@ public:
             // stage will be computed.
             Scope<Interval> scope;
             consumer.populate_scope(scope);
+            debug(3) << "Probe c2\n";
 
             // Compute all the boxes of the producers this consumer
             // uses.
             map<string, Box> boxes;
             if (consumer.func.has_extern_definition()) {
-
+                debug(3) << "Probe c2a\n";
                 const vector<ExternFuncArgument> &args = consumer.func.extern_arguments();
                 // Stage::define_bounds is going to compute a query
                 // buffer_t per producer for bounds inference to
@@ -745,9 +746,12 @@ public:
                 }
 
             } else {
+                debug(3) << "Probe c2b " << consumer.name << "\n";
                 for (const auto &cval : consumer.exprs) {
+                    debug(3) << "Probe c2b1 " << cval.value << "\n";
                     map<string, Box> new_boxes;
                     new_boxes = boxes_required(cval.value, scope, func_bounds);
+                    debug(3) << "Probe c2b1 end" << cval.value << "\n";
                     for (auto &i : new_boxes) {
                         // Add the condition on which this value is evaluated to the box before merging
                         Box &box = i.second;
@@ -756,7 +760,7 @@ public:
                     }
                 }
             }
-
+            debug(3) << "Probe c2c\n";
             // Expand the bounds required of all the producers found.
             for (size_t j = 0; j < i; j++) {
                 Stage &producer = stages[j];
@@ -766,6 +770,7 @@ public:
                 if (!b.empty()) {
                     // Check for unboundedness
                     for (size_t k = 0; k < b.size(); k++) {
+                        debug(3) << "Interval : " << b[k].min << " : " << b[k].max << "\n";
                         if (!b[k].is_bounded()) {
                             std::ostringstream err;
                             if (consumer.stage == 0) {
@@ -798,7 +803,7 @@ public:
                 }
             }
         }
-
+        debug(3) << "Probe c3\n";
         // The region required of the each output is expanded to include the size of the output buffer.
         for (Function output : outputs) {
             Box output_box;

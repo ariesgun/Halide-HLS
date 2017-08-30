@@ -39,8 +39,8 @@ int main(int argc, char **argv) {
 
     printf("start.\n");
 
-    pipeline_native(in, weight, 0, out_native);
-    save_image(out_native, argv[2]);
+    //pipeline_native(in, weight, 0, out_native);
+    //save_image(out_native, argv[2]);
 
     printf("finish running native code\n");
 

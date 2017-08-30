@@ -236,7 +236,7 @@ typedef enum halide_type_code_t
     halide_type_float = 2, //!< floating point numbers
     halide_type_handle = 3, //!< opaque pointer type (void *)
     halide_type_fixed_point = 4, //!< fixed-point type
-    halide_type_ufixed_point = 5 //!< fixed-point type
+    halide_type_ufixed_point = 5, //!< fixed-point type
 } halide_type_code_t;
 
 // Note that while __attribute__ can go before or after the declaration,
@@ -257,28 +257,28 @@ typedef enum halide_type_code_t
 struct halide_type_t {
     /** The basic type code: signed integer, unsigned integer, or floating point. */
 #if __cplusplus >= 201103L
-    HALIDE_ATTRIBUTE_ALIGN(2) halide_type_code_t code; // halide_type_code_t
+    HALIDE_ATTRIBUTE_ALIGN(1) halide_type_code_t code; // halide_type_code_t
 #else
-    HALIDE_ATTRIBUTE_ALIGN(2) uint8_t code; // halide_type_code_t
+    HALIDE_ATTRIBUTE_ALIGN(1) uint8_t code; // halide_type_code_t
 #endif
 
     /** The number of bits of precision of a single scalar value of this type. */
-    HALIDE_ATTRIBUTE_ALIGN(2) uint16_t bits;
+    HALIDE_ATTRIBUTE_ALIGN(1) uint8_t bits;
 
     /** The number of bits of integer parts of a fixed point type. The value is equal to bits in case of
     non-fixed point data types **/
-    HALIDE_ATTRIBUTE_ALIGN(2) uint16_t int_bits;
+    HALIDE_ATTRIBUTE_ALIGN(1) uint8_t int_bits;
 
     /** How many elements in a vector. This is 1 for scalar types. */
-    HALIDE_ATTRIBUTE_ALIGN(2) uint16_t lanes;
+    HALIDE_ATTRIBUTE_ALIGN(1) uint8_t lanes;
 
 #ifdef __cplusplus
     /** Construct a runtime representation of a Halide type from:
      * code: The fundamental type from an enum.
      * bits: The bit size of one element.
      * lanes: The number of vector elements in the type. */
-    HALIDE_ALWAYS_INLINE halide_type_t(halide_type_code_t code, uint16_t bits, uint16_t lanes = 1)
-        : code(code), bits(bits), int_bits(bits), lanes(lanes) {
+    HALIDE_ALWAYS_INLINE halide_type_t(halide_type_code_t code, uint8_t bits, uint8_t lanes = 1)
+        : code(code), bits(bits), int_bits(0), lanes(lanes) {
     }
 
     /** Construct a runtime representation of a Halide type from:
@@ -286,7 +286,7 @@ struct halide_type_t {
      * bits: The bit size of one element.
      * int_bits: The integer bit sizes (for fixed_point type)
      * lanes: The number of vector elements in the type. */
-    HALIDE_ALWAYS_INLINE halide_type_t(halide_type_code_t code, uint16_t bits, uint16_t int_bits, uint16_t lanes)
+    HALIDE_ALWAYS_INLINE halide_type_t(halide_type_code_t code, uint8_t bits, uint8_t int_bits, uint8_t lanes)
         : code(code), bits(bits), int_bits(int_bits), lanes(lanes) {
     }
 
@@ -1429,16 +1429,6 @@ HALIDE_ALWAYS_INLINE halide_type_t halide_type_of() {
 /** Construct the halide equivalent of a C type */
 template<typename T>
 HALIDE_ALWAYS_INLINE halide_type_t halide_type_of(uint16_t bits, uint16_t int_bits) {
-    // Create a compile-time error if T is not a pointer (without
-    // using any includes - this code goes into the runtime).
-    check_is_pointer<T> check;
-    (void)check;
-    return halide_type_t(halide_type_handle, 64);
-}
-
-/** Construct the halide equivalent of a C type */
-template<typename T>
-HALIDE_ALWAYS_INLINE halide_type_t halide_type_of(uint16_t bits) {
     // Create a compile-time error if T is not a pointer (without
     // using any includes - this code goes into the runtime).
     check_is_pointer<T> check;

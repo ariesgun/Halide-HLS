@@ -476,7 +476,7 @@ private:
         double f = 0.0;
         int64_t i = 0;
         uint64_t u = 0;
-        if (value.type() == op->type) {
+        if (value.type() == op->type && !value.type().is_fixed_ufixed_point()) {
             expr = value;
         } else if (op->type.is_int() &&
                    const_float(value, &f)) {
@@ -1009,9 +1009,12 @@ private:
         const Select *select_a = a.as<Select>();
         const Select *select_b = b.as<Select>();
 
+        Internal::debug(3) << " Sub of " << a << " : " << b << " \n";
         if (is_zero(b)) {
+            Internal::debug(3) << "  Zero la \n";
             expr = a;
         } else if (equal(a, b)) {
+            Internal::debug(3) << "  Equal \n";
             expr = make_zero(op->type);
         } else if (const_int(a, &ia) && const_int(b, &ib)) {
             if (no_overflow(a.type()) &&
@@ -1025,6 +1028,7 @@ private:
         } else if (const_float(a, &fa) && const_float(b, &fb)) {
             expr = FloatImm::make(a.type(), fa - fb);
         } else if (const_int(b, &ib)) {
+            Internal::debug(3) << "Is this true betweem " << a << " and " << b << "\n";
             expr = mutate(a + IntImm::make(a.type(), (-ib)));
         } else if (const_float(b, &fb)) {
             expr = mutate(a + FloatImm::make(a.type(), (-fb)));

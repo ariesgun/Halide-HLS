@@ -542,6 +542,43 @@ class ApplyTypesRecasting : public IRMutator {
         IRMutator::visit(op);
     }
 
+    void visit(const Select *op) {
+        // select(bool, true_val, false_val) 
+        // If one fits, dont check the other
+        Expr true_value  = op->true_value; 
+        Expr false_value = op->false_value;
+        if (equal(true_value, expr_ref.first)) {
+            true_value = Cast::make(expr_ref.second, true_value);
+
+            // Adapt the type of false_value
+            if (false_value.type() != true_value.type()) {
+                const Cast *cast = false_value.as<Cast>();
+                if (cast && cast->value.type() == true_value.type()) {
+                    false_value = cast->value;
+                } else {
+                    false_value = Cast::make(expr_ref.second, false_value);
+                }
+            }
+            expr = Select::make(op->condition, true_value, false_value);
+        } else if (equal(false_value, expr_ref.first)) {
+            false_value = Cast::make(expr_ref.second, false_value);
+
+            // Adapt the type of false_value
+            if (true_value.type() != false_value.type()) {
+                const Cast *cast = true_value.as<Cast>();
+                if (cast && cast->value.type() == false_value.type()) {
+                    true_value = cast->value;
+                } else {
+                    true_value = Cast::make(expr_ref.second, true_value);
+                }
+            }
+            expr = Select::make(op->condition, true_value, false_value);
+        } else {
+            IRMutator::visit(op);
+        }
+        Internal::debug(3) << "Apply casting" << expr << "\n";
+    }
+
 public:
     ApplyTypesRecasting(const std::pair<Expr&, Type> expr_ref) : expr_ref(expr_ref) {}
 };

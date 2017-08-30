@@ -118,8 +118,8 @@ public:
             clamped.compute_root();
             input2.compute_root();
 
-            bilateral_grid.tile(x, y, xo, yo, x_in, y_in, 1536, 2560);
-            //bilateral_grid.tile(x, y, xo, yo, x_in, y_in, 480, 640);
+            // bilateral_grid.tile(x, y, xo, yo, x_in, y_in, 1536, 2560);
+            bilateral_grid.tile(x, y, xo, yo, x_in, y_in, 480, 640);
             bilateral_grid.tile(x_in, y_in, x_grid, y_grid, x_in, y_in, 8, 8);
             bilateral_grid.compute_root();
             bilateral_grid.accelerate({clamped, input2}, x_grid, xo);

@@ -29,8 +29,11 @@ public:
 
 		// Define a 9x9 Gaussian Blur with a repeat-edge boundary condition.
         float sigma = 1.5f;
-
-        kernel(x, y) = (exp(-(x*x + y*y)/(2*sigma*sigma)) / (float)(2*M_PI*sigma*sigma));
+        
+        kernel_f(x, y) = (exp(-(x*x + y*y)/(2*sigma*sigma)) / (float)(2*M_PI*sigma*sigma));
+        kernel(x, y) = kernel_f(x, y) / 
+        			(kernel_f(0, 0) + kernel_f(1, 0) * 4 + kernel_f(2, 0) * 4 + kernel_f(1, 1) * 4 + kernel_f(1, 2) * 4 +
+        			 kernel_f(2, 1) * 4 + kernel_f(2, 2) * 4);
 
         // define the algorithm
         clamped(x, y) = BoundaryConditions::repeat_edge(input)(x, y);
@@ -72,7 +75,7 @@ public:
 	        conv1.unroll(x).unroll(y);
 	        
 	        // unroll the reduction
-	        //local_sum.update(0).unroll(win.x).unroll(win.y);
+	        local_sum.update(0).unroll(win.x).unroll(win.y);
 
         	// unroll the reduction
         	conv1.update(0).unroll(win.x).unroll(win.y);
@@ -106,7 +109,7 @@ public:
 	}
 
 	Func local_sum{"local_sum"}, res{"res"};
-	Func kernel{"kernel"}, clamped{"clamped"}, conv1{"conv1"};
+	Func kernel{"kernel"}, clamped{"clamped"}, conv1{"conv1"}, kernel_f{"kernel_f"};
     Func hw_output{"hw_output"};
 	Var x{"x"}, y{"y"}, c{"c"};
 	Var xo{"xo"}, xi{"xi"}, yi{"yi"}, yo{"yo"};

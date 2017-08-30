@@ -45,6 +45,8 @@ protected:
     std::string print_type(Type type, AppendSpaceIfNeeded space_option = DoNotAppendSpace);
 
     void visit(const FixedPointImm *);
+    void visit(const Min *);
+    void visit(const Max *);
     void visit(const Call *);
     void visit(const Provide *);
     void visit(const Realize *);

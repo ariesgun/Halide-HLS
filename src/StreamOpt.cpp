@@ -852,8 +852,8 @@ bool need_linebuffer(const HWKernelDAG &dag, const HWKernel &kernel) {
     bool ret = false;
     
     if (dag.input_kernels.count(kernel.name) > 0) {
-        if (!kernel.is_output && kernel.dims[0].size > 1) {
-            debug(3) << " Need_linebuffer: Kernel " << kernel.name << " is line-buffered\n";
+        if (!kernel.is_output && kernel.dims[0].size > 1 && kernel.dims[0].step == 1) {
+            debug(0) << " Need_linebuffer: Kernel " << kernel.name  << kernel.dims[0].size << " " << kernel.dims[0].step << " is line-buffered\n";
             ret =true;
         }
     } else {
@@ -1430,7 +1430,8 @@ class StreamOpt : public IRMutator {
                     debug(3) << "StencilDimSpecs information\n";
                     debug(3) << "dim " << dim.loop_var << " size: " << dim.size << " step: " << dim.step << " up_step: " << dim.up_step << "\n";
                     if (need_linebuffer(dag, kernel)) {
-                        bounds.push_back(Range(0, 1));
+                        // bounds.push_back(Range(0, 1));
+                        bounds.push_back(Range(0, dim.step));
                     } else{
                         bounds.push_back(Range(0, dim.step));
                     }

@@ -140,7 +140,7 @@ Expr lower_lerp(Expr zero_val, Expr one_val, Expr weight) {
             }
         }
 
-        if (computation_type.is_float() || computation_type.is_fixed_point()) {
+        if (computation_type.is_float() || computation_type.is_fixed_ufixed_point()) {
             result = zero_val * inverse_typed_weight +
                 one_val * typed_weight;
         } else {

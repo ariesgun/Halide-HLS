@@ -227,6 +227,7 @@ void CodeGen_HLS_Target::CodeGen_HLS_C::add_kernel(Stmt stmt,
 // almost that same as CodeGen_C::visit(const For *)
 // we just add a 'HLS PIPELINE' pragma after the 'for' statement
 void CodeGen_HLS_Target::CodeGen_HLS_C::visit(const For *op) {
+    debug(3) << "Entering For\n";
     internal_assert(op->for_type == ForType::Serial)
         << "Can only emit serial for loops to HLS C\n";
 
@@ -339,31 +340,46 @@ void CodeGen_HLS_Target::CodeGen_HLS_C::visit(const Allocate *op) {
 }
 
 void CodeGen_HLS_Target::CodeGen_HLS_C::visit(const Max *op) {
-    if (op->type.is_fixed_point() || op->type.is_ufixed_point()) {
-        if (is_const(op->a)) {
-            print_expr(op->b);
-        } else if (is_const(op->b)) {
-            print_expr(op->a);
-        } else {
-            CodeGen_C::visit(op);
-        }
-    } else {
-        CodeGen_C::visit(op);
-    }
+    debug(3) << "Entering Max\n";
+    // if (op->type.is_fixed_point() || op->type.is_ufixed_point()) {
+    //     if (is_const(op->a)) {
+    //         print_expr(op->b);
+    //     } else if (is_const(op->b)) {
+    //         print_expr(op->a);
+    //     } else {
+    //         CodeGen_C::visit(op);
+    //     }
+    // } else {
+        CodeGen_HLS_Base::visit(op);
+    // }
 }
 
 void CodeGen_HLS_Target::CodeGen_HLS_C::visit(const Min *op) {
-    if (op->type.is_fixed_point() || op->type.is_ufixed_point()) {
-        if (is_const(op->a)) {
-            print_expr(op->b);
-        } else if (is_const(op->b)) {
-            print_expr(op->a);
-        } else {
-            CodeGen_C::visit(op);
-        }
-    } else {
-        CodeGen_C::visit(op);
-    }
+    debug(3) << "Entering Min\n";
+    // Handle for min node.
+    // e,g :
+    // clamp (in1 - in2, 0.0f, 1.0f) =>
+    // ap_fixed<37,2> _583 = _581 - _582;
+    // _583 = (_583 < 0) ? ap_fixed<37,2>(0) : _583;
+    // _583 = (_583 > 1) ? ap_fixed<37,2>(1) : _583;
+    // ap_ufixed<36,1> _584 = (ap_ufixed<36,1> )(_583);
+    //
+   
+    // if (op->type.is_fixed_point() || op->type.is_ufixed_point()) {
+    //     if (is_const(op->a)) {
+    //         // check < op->a
+    //         string cond_id = print_expr(op->b )
+
+
+    //         print_expr(op->b);
+    //     } else if (is_const(op->b)) {
+    //         print_expr(op->a);
+    //     } else {
+    //         CodeGen_C::visit(op);
+    //     }
+    // } else {
+        CodeGen_HLS_Base::visit(op);
+    // }
 }
 
 }

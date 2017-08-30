@@ -292,7 +292,15 @@ void IRPrinter::visit(const DivImm *op) {
 }
 
 void IRPrinter::visit(const FixedPointImm *op) {
-    stream << "fixedpoint<" << op->type.bits() << "," << op->type.int_bits() << ">(" << op->value << "f)";
+    if (!op->is_signed) {
+        stream << "u";
+    }
+
+    if (op->is_float) {
+        stream << "fixedpoint<" << op->type.bits() << "," << op->type.int_bits() << ">(" << op->value.f << "f)";
+    } else {
+        stream << "fixedpoint<" << op->type.bits() << "," << op->type.int_bits() << ">(" << op->value.i << ")";
+    }
 }
 
 void IRPrinter::visit(const StringImm *op) {

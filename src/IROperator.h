@@ -323,8 +323,6 @@ inline Expr &operator-=(Expr &a, const Expr &b) {
 /** Return the product of two expressions, doing any necessary type
  * coercion using \ref Internal::match_types */
 inline Expr operator*(Expr a, Expr b) {
-    //user_warning << "Entering operation * between " << a << " and " << b << "\n";
-    //user_warning << "   Entering operation * between " << a.type() << " and " << b.type() << "\n";
     user_assert(a.defined() && b.defined()) << "operator* of undefined Expr\n";
     Internal::match_types(a, b);
     return Internal::Mul::make(a, b);
@@ -849,8 +847,15 @@ inline Expr select(Expr condition, Expr true_value, Expr false_value) {
         false_value = cast(true_value.type(), false_value);
     } 
     if (as_const_float(false_value) && (true_value.type().is_fixed_point() || true_value.type().is_ufixed_point())) {
-        false_value = cast(true_value.type(), false_value);
+        // Coerce first to floatint-point?
+        true_value  = cast(false_value.type(), true_value);
+        // const Internal::Cast* cast = true_value.as<Internal::Cast>();
+        // if (cast) {
+        //     true_value = cast->value;
+        // }
+        //false_value = cast(true_value.type(), false_value);
     }
+    Internal::debug(3) << "Test " << true_value << "\n";
 
     user_assert(condition.type().is_bool())
         << "The first argument to a select must be a boolean:\n"

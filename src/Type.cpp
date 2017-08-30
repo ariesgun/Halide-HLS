@@ -134,9 +134,11 @@ bool Type::can_represent(int64_t x) const {
             return false;
         }
     } else if (is_fixed_point()) {
-        return x >= min_int(int_bits()) && x <= max_int(int_bits());
+        // return x >= min_int(int_bits()) && x <= max_int(int_bits());
+        return true;
     } else if (is_ufixed_point()) {
-        return x >= 0 && (uint64_t)x <= max_uint(int_bits());
+        // return x >= 0 && (uint64_t)x <= max_uint(int_bits());
+        return true;
     } else {
         return false;
     }
@@ -159,9 +161,12 @@ bool Type::can_represent(uint64_t x) const {
             return false;
         }
     } else if (is_fixed_point()) {
-        return x <= (uint64_t)max_int(int_bits());
+        // return x <= (uint64_t)max_int(int_bits());
+        // For integer, it is always true
+        return true;
     } else if (is_ufixed_point()) {
-        return x <= max_uint(int_bits());
+        // return x <= max_uint(int_bits());
+        return true;
     } else {
         return false;
     }

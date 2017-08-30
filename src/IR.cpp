@@ -69,7 +69,11 @@ Expr Div::make(const Expr &a, const Expr &b) {
     internal_assert(a.type() == b.type()) << "Div of mismatched types\n";
 
     Div *node = new Div;
-    node->type = a.type();
+    if (a.type().is_fixed_ufixed_point() || b.type().is_fixed_ufixed_point()) {
+        node->type = node->match_output_type(a, b);
+    } else {
+        node->type = a.type();
+    }
     node->a = a;
     node->b = b;
     return node;
@@ -228,7 +232,8 @@ Expr Select::make(const Expr &condition, const Expr &true_value, const Expr &fal
     internal_assert(true_value.defined()) << "Select of undefined\n";
     internal_assert(false_value.defined()) << "Select of undefined\n";
     internal_assert(condition.type().is_bool()) << "First argument to Select is not a bool: " << condition.type() << "\n";
-    // internal_assert(false_value.type() == true_value.type()) << "Select of mismatched types\n";
+    Internal::debug(3) << "Test saja " << true_value << " ( " << true_value.type() << " ) and " << false_value << "\n"; 
+    internal_assert(false_value.type() == true_value.type()) << "Select of mismatched types\n";
     internal_assert(condition.type().is_scalar() ||
                     condition.type().lanes() == true_value.type().lanes())
         << "In Select, vector lanes of condition must either be 1, or equal to vector lanes of arguments\n";

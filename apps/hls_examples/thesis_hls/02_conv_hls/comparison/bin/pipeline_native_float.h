@@ -289,7 +289,8 @@ typedef enum halide_type_code_t
     halide_type_uint = 1,  //!< unsigned integers
     halide_type_float = 2, //!< floating point numbers
     halide_type_handle = 3, //!< opaque pointer type (void *)
-    halide_type_fixed_point = 4 //!< fixed-point type
+    halide_type_fixed_point = 4, //!< fixed-point type
+    halide_type_ufixed_point = 5, //!< fixed-point type
 } halide_type_code_t;
 
 // Note that while __attribute__ can go before or after the declaration,
@@ -1482,16 +1483,6 @@ HALIDE_ALWAYS_INLINE halide_type_t halide_type_of() {
 /** Construct the halide equivalent of a C type */
 template<typename T>
 HALIDE_ALWAYS_INLINE halide_type_t halide_type_of(uint16_t bits, uint16_t int_bits) {
-    // Create a compile-time error if T is not a pointer (without
-    // using any includes - this code goes into the runtime).
-    check_is_pointer<T> check;
-    (void)check;
-    return halide_type_t(halide_type_handle, 64);
-}
-
-/** Construct the halide equivalent of a C type */
-template<typename T>
-HALIDE_ALWAYS_INLINE halide_type_t halide_type_of(uint16_t bits) {
     // Create a compile-time error if T is not a pointer (without
     // using any includes - this code goes into the runtime).
     check_is_pointer<T> check;

@@ -128,7 +128,7 @@ void CodeGen_HLS_Testbench::visit(const Call *op) {
             internal_assert(stencils.contains(stream_var->name));
             Stencil_Type stream_type = stencils.get(stream_var->name);
             t = stream_type.elemType;
-            is_fixed = t.is_fixed_point() ? true : false;
+            is_fixed = t.is_fixed_ufixed_point() ? true : false;
         }
 
         const StringImm *direction = op->args[0].as<StringImm>();

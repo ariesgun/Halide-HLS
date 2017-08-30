@@ -40,8 +40,8 @@ public:
 
         // unroll the reduction
         //conv1.update(0).unroll(c).unroll(win.x).unroll(win.y);
-        //hw_output(x,y) = conv1(x,y);
-        hw_output = convolve55_rd(conv1);
+        hw_output(x,y) = conv1(x,y);
+        // hw_output = convolve55_rd(conv1);
         output(x, y) = cast<float> (hw_output(x, y));
        
 	}

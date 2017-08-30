@@ -173,6 +173,7 @@ struct IntImm : public ExprNode<IntImm> {
     int64_t value;
 
     static const IntImm *make(Type t, int64_t value) {
+        Internal::debug(3) << "What is this " << value << " with type" << t << "\n";
         internal_assert(t.is_int() && t.is_scalar())
             << "IntImm must be a scalar Int\n";
         internal_assert(t.bits() == 8 || t.bits() == 16 || t.bits() == 32 || t.bits() == 64)
@@ -275,28 +276,60 @@ struct FloatImm : public ExprNode<FloatImm> {
 
 /** Fixed point constants */
 struct FixedPointImm : public ExprNode<FixedPointImm> {
-    double value;
+    union single_cast {
+        double f;
+        int64_t i;
+        uint64_t ui;
+    };
+    union single_cast value;
     bool is_signed;
     bool is_float;
+
+    static int get_min_nb_bits(int64_t value) {
+        int bits = 0;
+        if (value == 0) {
+            return 1;
+        }
+
+        uint64_t value_abs = abs(value);
+        while(value_abs > 0) {
+            bits++;
+            value_abs >>= 1;
+        }
+
+        return bits;
+    }
 
     template <typename T>
     static const FixedPointImm *make(Type t, T value, bool is_signed) {
         internal_assert((t.is_fixed_point() || t.is_ufixed_point()) && t.is_scalar())
             << "FixedPointImm must be a scalar fixed-point\n";
         FixedPointImm *node = new FixedPointImm;
-        node->type = t;
-        node->value = (double) value;
         node->is_signed = is_signed;
         if (std::is_same<T, float>::value || std::is_same<T, double>::value) {
             node->is_float = true;
+            node->value.f = (double) value;
+            if (node->is_signed) {
+                node->type = FixedPoint(get_min_nb_bits(value) + 1 + (t.bits() - t.int_bits()), get_min_nb_bits(value) + 1);
+            } else {
+                node->type = UFixedPoint(get_min_nb_bits(value) + (t.bits() - t.int_bits()), get_min_nb_bits(value));
+            }
         } else {
             node->is_float = false;
+            node->value.i = (int64_t) value;
+            if (node->is_signed) {
+                node->type = FixedPoint(get_min_nb_bits(value) + 1, get_min_nb_bits(value) + 1);
+            } else {
+                node->type = UFixedPoint(get_min_nb_bits(value), get_min_nb_bits(value));
+            }
         }
+        Internal::debug(3) << " Node FixedPoint " << value << " is " << node->is_signed << " is " << node->is_float << " with " << node->value.i << "\n";
+
         return node;
     }
 
     bool is_int(uint64_t in_val) const {
-        return (!is_float && (uint64_t)value == in_val);
+        return (!is_float && (uint64_t)value.i == in_val);
    }
 
     static const IRNodeType _type_info = IRNodeType::FixedPointImm;

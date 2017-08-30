@@ -130,11 +130,15 @@ private:
         interval = Interval::single_point(op);
     }
 
-    void visit(const Cast *op) {
+    void visit(const FixedPointImm *op) {
+        interval = Interval::single_point(op);
+    }
 
+    void visit(const Cast *op) {
+        debug(3) << "   Probe Cast " << op->value << "\n";
         op->value.accept(this);
         Interval a = interval;
-
+        
         if (a.is_single_point(op->value)) {
             if (op->type.is_fixed_ufixed_point()) {
                 // If it is casted to fixed-point, take the value.
@@ -231,7 +235,7 @@ private:
             if (a.has_upper_bound() && b.has_upper_bound()) {
                 interval.max = a.max + b.max;
             }
-
+            
             // Check for overflow for (u)int8 and (u)int16
             if (!op->type.is_float() && op->type.bits() < 32) {
                 if (interval.has_upper_bound()) {
@@ -451,12 +455,17 @@ private:
         op->b.accept(this);
         Interval b = interval;
 
+         debug(3) << "   Probe Min: " << op->a << " and " << op->b << "\n";
+         debug(3) << "   Probe a Min: " << a.min << " and " << a.max << "\n";
+         debug(3) << "   Probe b Min: " << b.min << " and " << b.max << "\n";
+
         if (a.is_single_point(op->a) && b.is_single_point(op->b)) {
             interval = Interval::single_point(op);
         } else {
             interval = Interval(Interval::make_min(a.min, b.min),
                                 Interval::make_min(a.max, b.max));
         }
+        debug(3) << "   Result min is " << interval.min << " : " << interval.max << "\n";
     }
 
 
@@ -467,12 +476,17 @@ private:
         op->b.accept(this);
         Interval b = interval;
 
+         debug(3) << "   Probe Max: " << op->a << " and " << op->b << "\n";
+         debug(3) << "   Probe a Max: " << a.min << " and " << a.max << "\n";
+         debug(3) << "   Probe b Max: " << b.min << " and " << b.max << "\n";
+
         if (a.is_single_point(op->a) && b.is_single_point(op->b)) {
             interval = Interval::single_point(op);
         } else {
             interval = Interval(Interval::make_max(a.min, b.min),
                                 Interval::make_max(a.max, b.max));
         }
+        debug(3) << "   Result max is " << interval.min << " : " << interval.max << "\n";
     }
 
     void visit(const EQ *op) {
@@ -580,6 +594,7 @@ private:
         // call in two different places might produce different
         // results (e.g. during the update step of a reduction), so we
         // can't move around call nodes.
+        debug(3) << "   Probe Call " << op->name << " \n";
         std::vector<Expr> new_args(op->args.size());
         bool const_args = true;
         for (size_t i = 0; i < op->args.size() && const_args; i++) {
@@ -606,7 +621,11 @@ private:
             interval = Interval::single_point(call);
         } else if (op->is_intrinsic(Call::abs)) {
             Interval a = interval;
-            interval.min = make_zero(t);
+            if (t.is_fixed_ufixed_point()) {
+                interval.min = make_zero(Float(32));
+            } else {
+                interval.min = make_zero(t);
+            }
             if (a.is_bounded()) {
                 if (equal(a.min, a.max)) {
                     interval = Interval::single_point(Call::make(t, Call::abs, {a.max}, Call::PureIntrinsic));
@@ -681,6 +700,7 @@ private:
     }
 
     void visit(const Let *op) {
+        debug(3) << "   Probe Let \n";
         op->value.accept(this);
         Interval val = interval;
 
@@ -1447,7 +1467,6 @@ FuncValueBounds compute_function_value_bounds(const vector<string> &order,
             pair<string, int> key = { f.name(), j };
 
             Interval result;
-
             if (f.is_pure()) {
 
                 // Make a scope that says the args could be anything.

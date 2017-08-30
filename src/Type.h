@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "runtime/HalideRuntime.h"
+#include "CustomDataTypes.h"
 #include "Error.h"
 #include "Float16.h"
 #include "Util.h"
@@ -145,6 +146,15 @@ HALIDE_DECLARE_EXTERN_SIMPLE_TYPE(int64_t);
 HALIDE_DECLARE_EXTERN_SIMPLE_TYPE(uint64_t);
 HALIDE_DECLARE_EXTERN_SIMPLE_TYPE(float);
 HALIDE_DECLARE_EXTERN_SIMPLE_TYPE(double);
+
+// template<int B_W> struct halide_c_type_to_name<Halide::arb_int_t<B_W>> {
+//         static const bool known_type = true;                            
+//         static halide_cplusplus_type_name name() {                      
+//             return { halide_cplusplus_type_name::Class, "arb_int_t<2>"};      
+//         }   
+// };
+// HALIDE_DECLARE_EXTERN_STRUCT_TYPE(Halide::arb_int_t);
+
 HALIDE_DECLARE_EXTERN_STRUCT_TYPE(buffer_t);
 HALIDE_DECLARE_EXTERN_STRUCT_TYPE(halide_buffer_t);
 HALIDE_DECLARE_EXTERN_STRUCT_TYPE(halide_dimension_t);
@@ -349,7 +359,7 @@ struct Type {
 
     /** Return Type with same number of bits and lanes, but new_code for a type code. */
     Type with_code(halide_type_code_t new_code) const {
-        return Type(new_code, bits(), lanes(),
+        return Type(new_code, bits(), int_bits(), lanes(),
                     (new_code == code()) ? handle_type : nullptr);
     }
 
@@ -406,9 +416,9 @@ struct Type {
     /** Compare two types for equality */
     bool operator==(const Type &other) const {
         if (code() == FixedPoint || code() == UFixedPoint) {
-            return other.code() == FixedPoint || other.code() == UFixedPoint;// || other.code() == UInt || other.code() == Int; // || other.code() == Float;
+            return other.code() == FixedPoint || other.code() == UFixedPoint || other.code() == UInt || other.code() == Int;// || other.code() == UInt || other.code() == Int; // || other.code() == Float;
         } else if (other.code() == FixedPoint || other.code() == UFixedPoint) {
-            return code() == FixedPoint || code() == UFixedPoint;// || code() == UInt || code() == Int; // || code() == Float;
+            return code() == FixedPoint || code() == UFixedPoint || code() == UInt || code() == Int; // || code() == Float;
         } else {
             return code() == other.code() && bits() == other.bits() && lanes() == other.lanes() &&
                 (code() != Handle || same_handle_type(other));
@@ -417,8 +427,14 @@ struct Type {
 
     /** Compare two types for inequality */
     bool operator!=(const Type &other) const {
-        return code() != other.code() || (code() != FixedPoint && bits() != other.bits()) || lanes() != other.lanes() ||
-            (code() == Handle && !same_handle_type(other));
+        if (code() == FixedPoint || code() == UFixedPoint) {
+            return other.code() != FixedPoint && other.code() != UFixedPoint && other.code() != UInt && other.code() != Int;// || other.code() == UInt || other.code() == Int; // || other.code() == Float;
+        } else if (other.code() == FixedPoint || other.code() == UFixedPoint) {
+            return code() != FixedPoint && code() != UFixedPoint && code() != UInt && code() != Int; // || code() == Float;
+        } else {
+            return code() != other.code() || (code() != FixedPoint && bits() != other.bits()) || lanes() != other.lanes() ||
+                (code() == Handle && !same_handle_type(other));
+        }
     }
 
     /** Produce the scalar type (that of a single element) of this vector type */
@@ -488,8 +504,15 @@ inline Type Handle(int lanes = 1, const halide_handle_cplusplus_type *handle_typ
 }
 
 /** Construct the halide equivalent of a C type */
-template<typename T>
-inline Type type_of() {
+template<class T,
+    typename std::enable_if<has_arb_int<T>::value, int>::type = 0>
+Type type_of() {
+    return Type(halide_type_of_helper<T::is_signed, T::bit_width, T::bit_width>::halide_type_of_custom(), halide_handle_traits<T>::type_info());
+}
+
+template<class T,
+    typename std::enable_if<!has_arb_int<T>::value, int>::type = 0>
+Type type_of() {
     return Type(halide_type_of<T>(), halide_handle_traits<T>::type_info());
 }
 

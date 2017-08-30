@@ -51,36 +51,50 @@ int main(int argc, char **argv) {
     printf("finish running native code\n");
 
     bool success = true;
-    float min_error_float = 1.0f, max_error_float = 0.0f; // error for manual fixed
-    float min_error_fixed = 1.0f, max_error_fixed = 0.0f; // error for fixed-point 
+    double min_error_float = 1.0f, max_error_float = 0.0f; // error for manual fixed
+    double min_error_fixed = 1.0f, max_error_fixed = 0.0f; // error for fixed-point 
     
-    for (int y = 0; y < out_native.height() / 5; y++) {
-        for (int x = 0; x < out_native.width() / 5; x++) {
-	        if (true || out_native(x, y) != in2(x, y)) {
-                    printf("out_native_float(%d, %d) = %f, but out_native_fixed(%d, %d) = %f, out_hls_fixed(%d, %d) = %f\n",
-			   x, y, out_native_float(x, y),
-			   x, y, out_native(x, y) / 255.0f,
-               x, y, out_hls_float(x, y));     
+    double diff_1 = 0.0f;
+    double diff_2 = 0.0f;
+    double sum_temp = 0.0f;
 
-                    float error_float = out_native(x,y) / 255.0f - out_native_float(x,y);
+    for (int y = 0; y < out_native.height() ; y++) {
+        for (int x = 0; x < out_native.width() ; x++) {
+	        if (true || out_native(x, y) != in2(x, y)) {
+      //               printf("out_native_float(%d, %d) = %f, but out_native_fixed(%d, %d) = %f, out_hls_fixed(%d, %d) = %f\n",
+			   // x, y, out_native_float(x, y),
+			   // x, y, out_native(x, y) / 255.0f,
+      //          x, y, out_hls_float(x, y));     
+
+                    double error_float = out_native(x,y) / 255.0f - out_native_float(x,y);
                     if (error_float < 0) {
                         error_float = -1 * error_float;
                     }
-                    float error_fixed = out_hls_float(x,y) - out_native_float(x,y);
+                    double error_fixed = out_hls_float(x,y) - out_native_float(x,y);
                     if (error_fixed < 0) {
                         error_fixed = -1 * error_fixed;
                     }
 
-                    printf("    Error float-manual_fixed %f, float-fixed-point %f\n", error_float, error_fixed );
+                    // printf("    Error float-manual_fixed %f, float-fixed-point %f\n", error_float, error_fixed );
                     min_error_float = (error_float < min_error_float) ? error_float : min_error_float;
                     max_error_float = (error_float > max_error_float) ? error_float : max_error_float;
 
                     min_error_fixed = (error_fixed < min_error_fixed) ? error_fixed : min_error_fixed;
                     max_error_fixed = (error_fixed > max_error_fixed) ? error_fixed : max_error_fixed;
                     success = false;
+
+                    diff_1 += error_float * error_float;
+                    diff_2 += error_fixed * error_fixed;
+                    sum_temp += out_native_float(x, y) * out_native_float(x, y);
             }
         }
     }
+
+    double MSE   = sum_temp / diff_1;
+    double MSE_2 = sum_temp / diff_2;
+
+    printf(" SNR manual fixed %lf: %lf\n", MSE,   10*log10(MSE));
+    printf(" SNR fixed-point  %lf: %lf\n", MSE_2, 10*log10(MSE_2));
 
     printf(" Max error float %f; Min error Float %f\n", max_error_float, min_error_float);
     printf(" Max error fixed %f; Min error fixed %f\n", max_error_fixed, min_error_fixed);
